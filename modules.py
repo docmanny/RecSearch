@@ -1,15 +1,15 @@
 """
 Author: Juan Manuel Vazquez
 Date Created: 11/01/2016
-Date Last Modified: 11/02/2016
+Date Last Modified: 01/19/2017
 """
 
 
 def biosql_addrecord(sub_db_name, description, file, passwd, filetype='fasta', driver="psycopg2", user="postgres",
-                     host="localhost", db="bioseqdb", verbose=True):  # TODO: FILL OUT DOCSTRING
+                     host="localhost", db="bioseqdb", verbose=True, pretend=False):  # TODO: FILL OUT DOCSTRING
     """Wrapper for adding records to a BioSQL database.
 
-    :param sub_db_name:
+    :param sub_db_name: testing.
     :param description:
     :param file:
     :param passwd:
@@ -19,18 +19,18 @@ def biosql_addrecord(sub_db_name, description, file, passwd, filetype='fasta', d
     :param host:
     :param db:
     :param verbose:
+    :param pretend:
     :return:
     """
     from Bio import SeqIO
     from BioSQL import BioSeqDatabase
-
+    from pathlib import Path
+    from sys import exc_info
     if verbose:
         print("Beginning addition of {0} to main db {1}".format(filetype, db))
         print("Opening BioSeqDB server...")
     try:
         server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
-        if verbose:
-            print("Database opened!")
     except ImportError:
         if verbose:
             print("Import Error! The driver you selected isn't correct")
@@ -39,49 +39,79 @@ def biosql_addrecord(sub_db_name, description, file, passwd, filetype='fasta', d
         if verbose:
             print("Oops! Something went wrong with opening the server! Are you use all the right statements?")
         raise
+    else:
+        if verbose:
+            print("Database opened!")
 
     if verbose:
         print("Creating new sub-database for file...")
     try:
-        db = server.new_database(sub_db_name, description=description)
-        if verbose:
-            print("Successfully generated new sub-database {0}!".format(sub_db_name))
+        if pretend:
+            print('Pretend is active, this is where I would have committed the info to the server!')
+        else:
+            db = server.new_database(sub_db_name, description=description)
     except:
         if verbose:
             print('Failed to create new server!')
         raise
+    else:
+        if verbose:
+            print("Successfully generated new sub-database {0}!".format(sub_db_name))
 
     if verbose:
         print("Committing sub-database to server...")
     try:
-        server.commit()
-        if verbose:
-            print("Sub-database successfully committed!")
+        if pretend:
+            print('Pretend is active, this is where I would have committed the new sub-database to the server!')
+        else:
+            server.commit()
     except:
         if verbose:
             print('Couldn\'t commit new database!')
         raise
+    else:
+        if verbose:
+            print("Sub-database successfully committed!")
 
     if verbose:
-        print("Parsing file now for entry into {}".format(sub_db_name))
+        print("Parsing file now for entry into {}... (this takes a while)".format(sub_db_name))
+    infile = Path(file)
     try:
-        count = db.load(SeqIO.parse(file, filetype))
-        if verbose:
-            print("Loaded {} records".format(count))
+        if infile.exists() and infile.is_file():
+            try:
+                if pretend:
+                    print('Pretend is active, this is where I would have tried to load the data!')
+                else:
+                    count = db.load(SeqIO.parse(str(infile), filetype))
+            except:
+                if verbose:
+                    print("Problem loading data!")
+                raise
+            else:
+                if pretend:
+                    print('Pretend is active, this is where I would have said that records were loaded!')
+                else:
+                    if verbose:
+                        print("Loaded {} records".format(count))
+            if verbose:
+                print("Commiting new data to db {}".format(sub_db_name))
+            try:
+                if pretend:
+                    print('Pretend is active, this is where I would have committed the info to the server!')
+                else:
+                    server.commit()
+            except:
+                if verbose:
+                    print('Couldn\'t commit new database!')
+                raise
+            else:
+                if verbose:
+                    print("Sub-database successfully committed!")
+        else:
+            print('Sorry, file {} does not seem to exist...'.format(infile))
     except:
-        if verbose:
-            print("Problem loading data!")
-        raise
-    if verbose:
-        print("Commiting new data to db {}".format(sub_db_name))
-    try:
-        server.commit()
-        if verbose:
-            print("Sub-database successfully committed!")
-    except:
-        if verbose:
-            print('Couldn\'t commit new database!')
-        raise
+        print('Whoops! Something happened trying to open file {}:'.format(infile), exc_info())
+    # End of Function
 
 
 def biosql_recordids(sub_db_name, passwd, dumpfile=True, driver="psycopg2", user="postgres", host="localhost",
@@ -98,6 +128,7 @@ def biosql_recordids(sub_db_name, passwd, dumpfile=True, driver="psycopg2", user
     :return:
     """
     from BioSQL import BioSeqDatabase
+
     server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
     db = server[sub_db_name]
     if dumpfile:
@@ -114,6 +145,7 @@ def biosql_recordids(sub_db_name, passwd, dumpfile=True, driver="psycopg2", user
     if dumpfile:
         sys.stdout = og_stdout
         outfile.close()
+    # End of Function
 
 
 def biosql_getrecord(sub_db_name, id_list, id_type, passwd, driver="psycopg2", user="postgres", host="localhost",
@@ -134,19 +166,98 @@ def biosql_getrecord(sub_db_name, id_list, id_type, passwd, driver="psycopg2", u
     server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
     db = server[sub_db_name]
     return dict((identifier, db.lookup(**{id_type: identifier})) for identifier in id_list)
+    # End of Function
 
 
-def fetchseq(id_file, species, email, source="Entrez", output_type="fasta", output_name="outfile",
-             db="nucleotide", delim='\t', id_type='acc', batch_size=50, passwd=False): 
+def biosql_addmultirecord(base_dir, passwd='', description_base='Record imported from the file', filetype='fasta',
+                          driver="psycopg2", user="postgres", host="localhost", db="bioseqdb", verbose=True,
+                          pretend=False):
+    """
+    Wrapper for adding FASTA files in a directory hierarchy to a BioSQL database in a automated fashion.
+    :param base_dir: The base directory from which the function will begin its search. It assumes that this location
+                        contains a series of sub-directories, and that immediately in those directories lie the files
+                        to be added as records into the database.
+    :param description_base: A basic description of the data to be added. This descriptor will be applied to all entries
+                                to be added, with the addition of "[filename] located at [file location]" added on.
+                                (Default: 'Record imported from the file'
+    :param passwd: The password of the database to be accessed. (Default: '')
+    :param filetype: The format of the files to be imported. (Default: 'fasta')
+    :param driver: The python driver to be used to interact with the database. By default, it uses the psycopg2 module
+                    to communicate with a PostgreSQL database, but in principle this could also be a MySQL or some other
+                    SQL server type.
+    :param user:
+    :param host:
+    :param db:
+    :param verbose:
+    :param pretend:
+    :return:
+    """
+    from pathlib import Path
+    from sys import exc_info
+    if verbose:
+        print('Changing directory to {}'.format(base_dir))
+    p_base = Path(base_dir)
+    for p_sub in [subpath for subpath in p_base.iterdir() if subpath.is_dir()]:
+        if verbose:
+            print('Found path {}, checking for files'.format(str(p_sub)))
+        p_file = [p for p in sorted(p_sub.glob('*.{}*'.format(filetype[0:2]))) if p.is_file()]
+        if len(p_file) > 1:
+            checkyoself = True
+            while checkyoself:
+                for a, b in enumerate(p_file):
+                    print('{0}: {1}'.format(a+1, b))
+                p_file_index = input("Multiple files found for {}, please select one:".format(str(p_file[0].parent)))
+                if p_file_index in [str(i) for i in range(1, len(p_file)+1)]:
+                    checkyoself = False
+                elif p_file_index in ['quit', 'q', 'e', 'exit']:
+                    escape = input("Are you sure you want to stop? (y/n)")
+                    if escape == 'y':
+                        raise Exception("Program ended by User")
+                else:
+                    print('Invalid selection!')
+        elif (len(p_file) == 0) and verbose:
+            print('No file found, continuing...')
+            continue
+        else:
+            p_file = p_file[0]
+            if verbose:
+                print("File found: {}".format(str(p_file.name)))
+            p_file_lst = p_file.name.split('_')
+            sub_db_name = ''.join([x[0:3].title() for x in p_file_lst[0:2]] +
+                                  [p_file_lst[len(p_file_lst)-1].lstrip('v').rstrip(p_file.suffix)])
+            description_full = description_base + str(p_file.name) + 'located at' + str(p_file.parent)
+            try:
+                biosql_addrecord(sub_db_name=sub_db_name, description=description_full, file=str(p_file),
+                                 passwd=passwd, filetype=filetype, driver=driver, user=user,
+                                 host=host, db=db, verbose=verbose, pretend=pretend)
+            except:
+                print("Unexpected error:", exc_info()[0])
+                continue
+    if verbose:
+        print("Done!")
 
+
+def fetchseq(id_file, species, email='', source="psql", output_type="fasta", output_name="outfile",
+             db="nucleotide", delim='\t', id_type='acc', batch_size=50, passwd='', ):
     import re
+    from os import strerror
+    from errno import ENOENT
     from Bio import SeqIO
-    # TODO: FIX FILE SYSTEM USING OS SO THAT WAY IT RUNS NICELY
+    from pathlib import Path
     # TODO: COMMENT CODE
     # TODO: ADD VERBOSE MODE
     # First identify the list items
-    with open(id_file, 'r') as id_file:
-        id_prelist = [line.strip() for line in id_file]     # list of each line in the file
+
+    in_file = Path(id_file)
+    out_file = Path(output_name + '.' + output_type)
+
+    if in_file.exists():
+        pass
+    else:
+        raise FileNotFoundError(ENOENT, strerror(ENOENT), str(in_file.name))
+
+    with in_file.open('r') as infile_handle:
+        id_prelist = [line.strip() for line in infile_handle]     # list of each line in the file
     id_list = [str(item.split(delim)) for item in id_prelist]    # Breaks the tab sep in the lines into strings
     p = [re.compile('([\d]+)(\d+(\.\d+)?)'),        # regex for ID number
          re.compile('gi[| :]\d+'),                 # regex for gi
@@ -188,7 +299,7 @@ def fetchseq(id_file, species, email, source="Entrez", output_type="fasta", outp
         search_results = Entrez.read(Entrez.epost(db, id=id_str))
         webenv = search_results["WebEnv"]
         query_key = search_results["QueryKey"]
-        with open(output_name, "a+") as out_handle:
+        with out_file.open("a+") as out_handle:
             for start in range(0, len(id_list_ids), batch_size):
                 attempt = 0
                 while attempt < 3:
@@ -209,8 +320,6 @@ def fetchseq(id_file, species, email, source="Entrez", output_type="fasta", outp
                 out_handle.write(data)
     elif source.lower() == "psql":
         sub_db_name = ''.join([i[0:3] for i in species.title().split(' ')])
-        if not passwd:
-            passwd = input("what's the password for the record?")
         seqdict = biosql_getrecord(sub_db_name=sub_db_name, id_list=id_list_ids, id_type=id_type, passwd=passwd,
                                    driver="psycopg2", user="postgres", host="localhost", db="bioseqdb")
         SeqIO.write([item for key, item in seqdict.items()], '.'.join([output_name, output_type]), output_type)
@@ -220,6 +329,14 @@ def fetchseq(id_file, species, email, source="Entrez", output_type="fasta", outp
         SeqIO.write([seqdict[i] for i in id_list_ids], '.'.join([output_name, output_type]), output_type)
     else:
         print('Not a valid database source!')
+
+
+def fetchseq_multi():
+    # Function that either:
+    # 1) Collects sequences for a single protein from various species, given a list of species;
+    # 2) Collects various sequences from one species, given a list of sequence IDs;
+    # 3) Collects various sequences, given sequence IDs.
+    pass  # TODO: Write this function
 
 
 def crosscheck():
