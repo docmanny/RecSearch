@@ -5,6 +5,35 @@ Date Last Modified: 01/19/2017
 """
 
 
+def merge_ranges(ranges):
+    """
+    Merge overlapping and adjacent ranges and yield the merged ranges in order.
+    The argument must be an iterable of pairs (start, stop).
+    (Source: Gareth Rees, StackExchange)
+
+    >>> list(merge_ranges([(5,7), (3,5), (-1,3)]))
+    [(-1, 7)]
+    >>> list(merge_ranges([(5,6), (3,4), (1,2)]))
+    [(1, 2), (3, 4), (5, 6)]
+    >>> list(merge_ranges([]))
+    []
+    """
+    ranges = iter(sorted(ranges))
+    try:
+        current_start, current_stop = next(ranges)
+    except StopIteration:  # ranges is empty
+        return
+    for start, stop in ranges:
+        if start > current_stop:
+            # Gap between segments: output current segment and start a new one.
+            yield current_start, current_stop
+            current_start, current_stop = start, stop
+        else:
+            # Segments adjacent or overlapping: merge.
+            current_stop = max(current_stop, stop)
+    yield current_start, current_stop
+
+
 def biosql_addrecord(sub_db_name, description, file, passwd, filetype='fasta', driver="psycopg2", user="postgres",
                      host="localhost", db="bioseqdb", verbose=True, pretend=False):  # TODO: FILL OUT DOCSTRING
     """Wrapper for adding records to a BioSQL database.
@@ -128,20 +157,21 @@ def biosql_recordids(sub_db_name, passwd, dumpfile=True, driver="psycopg2", user
     :return:
     """
     from BioSQL import BioSeqDatabase
+    from pathlib import Path
 
     server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
     db = server[sub_db_name]
     if dumpfile:
         import sys
         og_stdout = sys.stdout
-        outfile = open('./'+sub_db_name+'.index', "w")
+        outfile = Path('./'+sub_db_name+'.index').open("w")
         sys.stdout = outfile
     print("This database contains {} records".format(len(db)))
     for key, record in db.items():
         if key == 1:
             print("As an example of what items are in the database, here is the first entry:")
             print(key, record)
-        print("Key {0} maps to a sequence record with id {0}".format(key, record.id))
+        print("Key {0} maps to a sequence record with id {1} and name {2}".format(key, record.id, record.name))
     if dumpfile:
         sys.stdout = og_stdout
         outfile.close()
@@ -149,7 +179,7 @@ def biosql_recordids(sub_db_name, passwd, dumpfile=True, driver="psycopg2", user
 
 
 def biosql_getrecord(sub_db_name, passwd, id_list=[], id_type='accession', driver="psycopg2", user="postgres",
-                     host="localhost", db="bioseqdb", verbose=False):  # TODO: FILL OUT DOCSTRING
+                     host="localhost", db="bioseqdb", verbose=True):  # TODO: FILL OUT DOCSTRING
     """
 
     :param sub_db_name:
@@ -164,43 +194,91 @@ def biosql_getrecord(sub_db_name, passwd, id_list=[], id_type='accession', drive
     :return:
     """
     from BioSQL import BioSeqDatabase
-    server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
-    db = server[sub_db_name]
+    try:
+        if verbose:
+            print("Opening database server ", db)
+        server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
+        if verbose:
+            print("Server opened successfully!")
+    except:
+        print('Sorry, couldn\'t open the database! Check database name and settings and try again.')
+        raise
+    try:
+        if verbose:
+            print("Opening sub-database ", sub_db_name)
+        db = server[sub_db_name]
+        if verbose:
+            print("Successfully opened sub-database!")
+    except:
+        print('Sorry, couldn\'t open the sub-database! Check database name and settings and try again.')
     seqdict = {}
     for identifier in id_list:
-        try:
-            seqdict[identifier] = db.lookup(**{id_type: identifier})
-        except IndexError as err:
-            if verbose:
-                print('Attempting to search using Primary ID instead of declared type:')
+        try_get_id = True
+        if try_get_id:
             try:
+                if verbose:
+                    print("Now searching database {0} for {1}: {2}".format(sub_db_name, id_type, identifier))
+                seqdict[identifier] = db.lookup(**{id_type: identifier})
+                if verbose:
+                    print('Got sequence for {}!'.format(identifier))
+                try_get_id = True
+            except IndexError as err:
+                print("WARNING: couldn't find {0} using given ID type... \n Full error: {1}".format(identifier, err))
+        if try_get_id:
+            identifier_sans_subnumber = identifier.split('.')[0]
+            if verbose:
+                print('Seeing if removing any sub-numbers (acc: xxxxxx.1 for example) helps...')
+                print('Identifier: ', identifier_sans_subnumber)
+            try:
+                if verbose:
+                    print("Now searching database {0} for {1}: {2}".format(sub_db_name, id_type,
+                                                                           identifier_sans_subnumber))
+                seqdict[identifier] = db.lookup(**{id_type: identifier_sans_subnumber})
+                if verbose:
+                    print('Got sequence for {}!'.format(identifier))
+                try_get_id = True
+            except IndexError as err1:
+                print("WARNING: couldn't find {0} using abbreviated ID... \n Full error: {1}"
+                      .format(identifier_sans_subnumber,
+                              err1))
+        if try_get_id:
+            try:
+                if verbose:
+                    print('Attempting to search using Primary ID instead of declared type:')
                 seqdict[identifier] = db.lookup(primary_id=identifier)
-            except IndexError:
+                if verbose:
+                    print('Got sequence for {}!'.format(identifier))
+                try_get_id = False
+            except IndexError as err2:
+                print("WARNING: couldn't find {0} using Primary ID... \n full error: {1}".format(identifier, err2))
                 if verbose:
                     print('Primary ID search didn\'t work! Troubleshooting...')
-                try:
-                    if verbose:
-                        print('Attempting to search using name instead of declared type:')
-                    seqdict[identifier] = db.lookup(name=identifier)
-                except IndexError:
-                    if verbose:
-                        print('Name search didn\'t work! Troubleshooting...')
-                    try:
-                        id_type = input('Last shot, chose an ID type: '
-                                        '[accession, primary_id, gi, version, display_id, name]')
-                        seqdict[identifier] = db.lookup(**{id_type: identifier})
-                    except IndexError:
-                        print("WARNING: couldn't find {0}: \n full error: {1}".format(identifier, err))
-
-                finally:
-                    if verbose:
-                        print('Error resolved! Got sequences')
-            finally:
+        if try_get_id:
+            try:
                 if verbose:
-                    print('Error resolved! Got sequences')
-        finally:
-            if verbose:
-                print('Error resolved! Got sequences')
+                    print('Attempting to search using name instead of declared type:')
+                seqdict[identifier] = db.lookup(name=identifier)
+                if verbose:
+                    print('Got sequence for {}!'.format(identifier))
+                try_get_id = False
+            except IndexError as err3:
+                print("WARNING: Still couldn't find {0}: \n full error: {1}".format(identifier, err3))
+                if verbose:
+                    print('Name search didn\'t work! Troubleshooting...')
+        if try_get_id:
+            try:
+                id_type = input('Last shot, chose an ID type: '
+                                '[accession, primary_id, gi, version, display_id, name]')
+                if id_type == 'exit':
+                    exit(exit(),'Script ended!')
+                seqdict[identifier] = db.lookup(**{id_type: identifier})
+                if verbose:
+                    print('Got sequence for {}!'.format(identifier))
+                try_get_id = False
+            except IndexError as err5:
+                print("WARNING: COULD NOT FIND SEQUENCES FOR ID:{0}: \n full error: {1}".format(identifier, err5))
+        if try_get_id:
+            continue
     return seqdict
     # End of Function
 
@@ -315,13 +393,25 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
         if verbose:
             print('Reading ID File...')
         id_prelist = [line.strip() for line in infile_handle]     # list of each line in the file
+        id_prelist = list(filter(None, id_prelist))
+        if verbose:
+            print('Full header for Entry 1:')
+            try:
+                print(id_prelist[0])
+            except IndexError:
+                print('No items found!')
+                raise
+    # Check to make sure list is not empty
+    if verbose and (not id_prelist or id_prelist is None):
+        print('id_prelist is empty!')
+
     id_list = [str(item.split(delim)) for item in id_prelist]    # Breaks the tab sep in the lines into strings
 
     # Define the regex functions
-    p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),      # regex for gi
-         re.compile('(NW|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for accession
-         re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),      # regex for generic ID
-         re.compile(':(\d+)-(\d+)'),                             # regex for sequence range
+    p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),                      # regex for gi
+         re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),   # regex for accession
+         re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),                      # regex for generic ID
+         re.compile(':(\d+)-(\d+)'),                                        # regex for sequence range
          ]
     id_list_ids = []    # Initialized list of IDs
     seq_range = {}      # Initialized dict of sequence ranges
@@ -331,12 +421,18 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
         print('ID File Loaded, performing regex search for identifiers...')
         print('ID Specified as: ', id_type)
     if id_type == 'brute':
-        if bool(p[0].findall(id_list[0])):
-            id_type = 'gi'
         if bool(p[1].findall(id_list[0])):
             id_type = 'accession'
-        if bool(p[2].findall(id_list[0])):
+            if verbose:
+                print(p[1].findall(id_list[0]))
+        elif bool(p[0].findall(id_list[0])):
+            id_type = 'gi'
+            if verbose:
+                print(p[1].findall(id_list[0]))
+        elif bool(p[2].findall(id_list[0])):
             id_type = 'id'
+            if verbose:
+                print(p[1].findall(id_list[0]))
         else:
             id_type = 'other'
         if verbose:
@@ -345,9 +441,12 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
         if bool(p[0].findall(id_list[0])):
             found_id = True
             if verbose:
-                print('Successfully found GI numbers, list has been compiled!')
+                print('Successfully found GI numbers, compiling list!')
             for item in id_list:
-                id_list_ids.append(''.join(p[0].findall(item)[0][0:3]))
+                item_parts = p[0].findall(item)
+                if verbose:
+                    print('Item:\t', item_parts)
+                id_list_ids.append(item_parts[0][0:3])
                 if bool(p[3].findall(id_list[0])):
                     # Seq_range will be a list of tuples where the second element is the range, and the first
                     # is the ID. This way, the function accommodates sequences with a subrange and sequences without a
@@ -361,9 +460,12 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
         if bool(p[1].findall(id_list[0])):
             found_id = True
             if verbose:
-                print('Successfully found accession numbers, list has been compiled!')
+                print('Successfully found accession numbers, compiling list!')
             for item in id_list:
-                id_list_ids.append(''.join(p[1].findall(item)[0][0:3]))
+                item_parts = p[1].findall(item)
+                if verbose:
+                    print('Item:\t', item_parts)
+                id_list_ids.append(item_parts[0][0:3])
                 if bool(p[3].findall(id_list[0])):
                     seq_range[''.join(p[1].findall(item)[0][0:3])] = p[3].findall(item)[0]
                     if verbose:
@@ -374,9 +476,12 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
         if bool(p[2].findall(id_list[0])):
             found_id = True
             if verbose:
-                print('Successfully found ID numbers, list has been compiled!')
+                print('Successfully found ID numbers, compiling list!')
             for item in id_list:
-                id_list_ids.append(''.join(p[2].findall(item)[0][0:3]))
+                item_parts = p[2].findall(item)
+                if verbose:
+                    print('Item:\t', item_parts)
+                id_list_ids.append(item_parts[0][0:3])
                 if bool(p[3].findall(id_list[0])):
                     seq_range[''.join(p[2].findall(item)[0][0:3])] = p[3].findall(item)[0]
                     if verbose:
@@ -396,9 +501,12 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
             id_type = input('ID name:')
             found_id = True
             if verbose:
-                print('Successfully found custom ID numbers, list has been compiled!')
+                print('Successfully found custom ID numbers, compiling list!')
             for item in id_list:
-                id_list_ids.append(''.join(p[4].findall(item)[0][0:3]))
+                item_parts = p[4].findall(item)
+                if verbose:
+                    print('Item:\t', item_parts)
+                id_list_ids.append(item_parts[0][0:3])
                 if bool(p[3].findall(str(item))):
                     seq_range[''.join(p[4].findall(item)[0][0:3])] = p[3].findall(item)[0]
                     if verbose:
@@ -408,10 +516,10 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
     if verbose:
         print('ID list: ')
         for index, ID_item in enumerate(id_list_ids):
-            print(index+1, ': ', ID_item)
+            print(index+1, ': ', ''.join(ID_item))
 
     # Armed with the ID list, we fetch the sequences from the appropriate source
-    if source == "Entrez":  # Todo: Make sure this will actually output the correct sequence range...
+    if source.lower() == "entrez":  # Todo: Make sure this will actually output the correct sequence range...
         if verbose:
             print('Source selected was Entrez. Beginning search now:')
         from Bio import Entrez
@@ -420,7 +528,7 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
         Entrez.email = email
         if verbose:
             print('Entrez email set as: ', email)
-        id_str = ",".join(id_list_ids)
+        id_str = ",".join([i[2] for i in id_list_ids])
         search_results = Entrez.read(Entrez.epost(db, id=id_str))
         if verbose:
             print('EPost with IDs for database {} submitted to Entrez'.format(db))
@@ -455,10 +563,13 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
                 fetch_handle.close()
                 out_handle.write(data)
     elif source.lower() == "psql":
+        if verbose:
+            print('Searching for sequences in local PostgreSQL db...')
         sub_db_name = ''.join([i[0:3] for i in species.title().split(' ')]) + version
-        seqdict = biosql_getrecord(sub_db_name=sub_db_name, id_list=id_list_ids, id_type=id_type, passwd=passwd,
-                                   driver="psycopg2", user="postgres", host="localhost", db="bioseqdb")
-        itemsnotfound = [x for x in id_list_ids if x not in seqdict.keys()]
+        id_list_search = [''.join(i[0:3]) for i in id_list_ids]
+        seqdict = biosql_getrecord(sub_db_name=sub_db_name, id_list=id_list_search, id_type=id_type,
+                                   passwd=passwd, driver="psycopg2", user="postgres", host="localhost", db="bioseqdb")
+        itemsnotfound = [''.join(x) for x in id_list_ids if ''.join(x) not in seqdict.keys()]
         if itemsnotfound:
             if verbose:
                 print('Some items were not found. List of items will be saved to the file items_not_found.output')
@@ -467,6 +578,7 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
             with open(str(out_file.cwd()) + 'items_not_found.output', 'w') as missingitems:
                 missingitems.writelines(itemsnotfound)
         keys = [k for k in seqdict.keys()]
+        id_range = None
         if verbose:
             print("Sequence Dictionary keys:")
             print(keys)
@@ -506,7 +618,8 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
         if verbose:
             print('Sequence Record post-processing, to be saved:')
             print(seqdict)
-            print('Length of subsequence with range{0}: {1}'.format(id_range, len(seqdict[k])))
+            if id_range:
+                print('Length of subsequence with range{0}: {1}'.format(id_range, len(seqdict[k])))
         SeqIO.write([seqdict[key] for key in seqdict.keys()], str(out_file), output_type)
     elif source == "fasta":  # Note: anecdotally, this doesn't run terribly fast - try to avoid.
         seqdict = SeqIO.index(db, source,
@@ -532,7 +645,7 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
                 if seqdict[k].id in seqrange_ids:
                     if verbose:
                         print('For sequence {}, found a sequence range!'.format(str(seqdict[k].id)))
-                        print('Full length of sequence: {}'.format(len(seqdict[k])))
+                        print('\tFull length of sequence: {}'.format(len(seqdict[k])))
                     if id_type == 'gi':
                         seq_description_full = p[0].findall(seqdict[k].description)[0]
                     elif id_type == 'accession':
@@ -541,22 +654,28 @@ def fetchseq(id_file, species, email='', source="psql", output_type="fasta", out
                         seq_description_full = p[2].findall(seqdict[k].description)[0]
                     else:
                         seq_description_full = p[4].findall(seqdict[k].description)[0]
-                else:
-                    if verbose:
-                        print('No sequence range found, continuing...')
-                    continue
+                if verbose:
+                    print(int(seq_range[k][0]))
+                    print(int(seq_range[k][1]))
+                    bla = input('Press any key to continue')
                 id_range = ':' + '-'.join(seq_range[k])
                 seqdict[k] = seqdict[k][int(seq_range[k][0]):int(seq_range[k][1])]
                 seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + str(seq_description_full[3])
                 seqdict[k].id += id_range
                 if verbose:
-                    print('Length of subsequence with range{0}: {1}'.format(id_range, len(seqdict[k])))
+                    print('\tLength of subsequence with range{0}: {1}'.format(id_range, len(seqdict[k])))
+                else:
+                    if verbose:
+                        print('No sequence range found, continuing...')
+                    continue
+
         SeqIO.write([seqdict[key] for key in seqdict.keys()], str(out_file), output_type)
     else:
         print('Not a valid database source!')
     if verbose:
         print('Done!')
     return success_status
+
 
 def fetchseq_multi():
     # Function that either:
@@ -573,81 +692,91 @@ def crosscheck():
     pass
 
 
-def blast(seqfile, target_species, database, query_species="Homo sapiens", filetype="fasta", blasttype='blastn',
-          localblast=True, evalue=0.005, recblast_on=False, megablast=True, blastoutput_custom="", verbose=True):
-    # TODO: TEST IT 
+def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blasttype='blastn',
+          localblast=False, expect=0.005, recblast_on=False, megablast=True, blastoutput_custom="", perc_ident=75,
+          verbose=True):
     # TODO: WRITE DOCSTRING
     # TODO: AFTER RECBLAST WORKS, CLEAN UP COMMENTED-OUT CODE
-    # TODO: Check if you can get query coverage info from blast file
     from pathlib import Path
     from Bio import SeqIO
     from Bio.Blast import NCBIWWW
     from Bio.Blast.Applications import NcbiblastxCommandline, NcbiblastnCommandline, NcbiblastpCommandline, \
         NcbitblastxCommandline, NcbitblastnCommandline
-
-    if recblast_on:
-        length_list = []
+    if isinstance(seq_record, SeqIO.SeqRecord):
+        pass
+    else:
+        seq_record = SeqIO.read(seq_record,filetype)
     if verbose:
         print("Now starting BLAST...")
     if blasttype != 'blastn':
         megablast = False
+    if recblast_on:
+        length_list = len(seq_record)
+    # Begin by opening recblast_out, and then start with the primary BLAST
+    if blastoutput_custom == '':
+        blastoutput_custom = Path("{0}_blast".format(target_species),
+                                  "{0}_{1}_{2}_to_{3}.xml".format(blasttype, seq_record.name,
+                                                                  query_species, target_species))
+    else:
+        blastoutput_custom = Path(blastoutput_custom)
+    recstring = str(seq_record.seq)
+    if localblast:
+        if blasttype == "blastn":
+            NcbiblastnCommandline(query=recstring, db=database, expect=expect, outfmt=5, megablast=megablast,
+                                  out=str(blastoutput_custom), perc_ident=perc_ident)
+        elif blasttype == "blastp":
+            NcbiblastpCommandline(query=recstring, db=database, expect=expect, outfmt=5, megablast=megablast,
+                                  out=str(blastoutput_custom), perc_ident=perc_ident)
+        elif blasttype == "blastx":
+            NcbiblastxCommandline(query=recstring, db=database, expect=expect, outfmt=5, megablast=megablast,
+                                  out=str(blastoutput_custom), perc_ident=perc_ident)
+        elif blasttype == "tblastx":
+            NcbitblastxCommandline(query=recstring, db=database, expect=expect, outfmt=5, megablast=megablast,
+                                   out=str(blastoutput_custom), perc_ident=perc_ident)
+        elif blasttype == "tblastn":
+            NcbitblastnCommandline(query=recstring, db=database, expect=expect, outfmt=5, megablast=megablast,
+                                   out=str(blastoutput_custom), perc_ident=perc_ident)
+        else:
+            raise Exception("Invalid blast choice!")
+    else:
+        blast_result = NCBIWWW.qblast(program=str(blasttype), database=str(database), sequence=recstring,
+                                      entrez_query='"{}"[ORGN]'.format(target_species), expect=expect,
+                                      megablast=megablast, perc_ident=perc_ident)
+        if verbose:
+            print('Done, saving to outfile....')
+        with blastoutput_custom.open("w") as fxml:
+            fxml.write(blast_result.read())
+    if recblast_on:
+        return length_list
+
+
+def blast_many(seqfile, target_species, database, query_species="Homo sapiens", filetype="fasta", blasttype='blastn',
+          localblast=False, expect=0.005, recblast_on=False, megablast=True, blastoutput_custom="", perc_ident=75,
+          verbose=True):
+    # TODO: TEST IT 
+    # TODO: WRITE DOCSTRING
+    # TODO: AFTER RECBLAST WORKS, CLEAN UP COMMENTED-OUT CODE
+    # TODO: Check if you can get query coverage info from blast file
+    from Bio import SeqIO
+
+    length_list = []
+    if verbose:
+        print("Now starting BLAST...")
+
     # First loop will iterate over each sequence in a file, preferably FASTA but also allows for GenBank
     for index, seq_record in enumerate(SeqIO.parse(seqfile, filetype)):
-        if recblast_on:
-            # recblastout = open(os.path.join(os.getcwd(),
-            #                            "{0}_recblast".format(target_species),
-            #                            "{0}_{1}.list".format(blasttype, seq_record.name)), "a+")
-            # length_list.append(len(seq_record))
-            pass
-        if verbose:
-            print("Current BLAST: \n {}: {}".format(index+1, seq_record.name))
-
-        # Begin by opening recblast_out, and then start with the primary BLAST
-        if blastoutput_custom == '':
-            blastoutput_custom = Path("{0}_blast".format(target_species),
-                                      "{0}_{1}_{2}_to_{3}.xml".format(blasttype, seq_record.name,
-                                                                      query_species, target_species))
-        else:
-            blastoutput_custom = Path(blastoutput_custom)
-        recstring = str(seq_record.seq)
-        if localblast:
-            if blasttype == "blastn":
-                NcbiblastnCommandline(query=recstring, db=database, evalue=evalue, outfmt=5, megablast=megablast,
-                                      out=blastoutput_custom)
-            elif blasttype == "blastp":
-                NcbiblastpCommandline(query=recstring, db=database, evalue=evalue, outfmt=5, megablast=megablast,
-                                      out=str(blastoutput_custom))
-            elif blasttype == "blastx":
-                NcbiblastxCommandline(query=recstring, db=database, evalue=evalue, outfmt=5, megablast=megablast,
-                                      out=str(blastoutput_custom))
-            elif blasttype == "tblastx":
-                NcbitblastxCommandline(query=recstring, db=database, evalue=evalue, outfmt=5, megablast=megablast,
-                                       out=str(blastoutput_custom))
-            elif blasttype == "tblastn":
-                NcbitblastnCommandline(query=recstring, db=database, evalue=evalue, outfmt=5, megablast=megablast,
-                                       out=str(blastoutput_custom))
-            else:
-                raise Exception("Invalid blast choice!")
-        else:
-            blast_result = NCBIWWW.qblast(program=str(blasttype), database=str(database), sequence=recstring,
-                                          entrez_query='"{}"[ORGN]'.format(target_species), expect=evalue,
-                                          megablast=megablast)
-            if verbose:
-                print('Done, saving to outfile....')
-            with blastoutput_custom.open("w") as fxml:
-                fxml.write(blast_result.read())
-        print("Done!")
+        length_list.append(blast(seq_record=seq_record, target_species=target_species, database=database, query_species=query_species,
+              filetype=filetype, blasttype=blasttype, localblast=localblast, expect=expect, recblast_on=recblast_on,
+              megablast=megablast, blastoutput_custom=blastoutput_custom, perc_ident=perc_ident, verbose=verbose))
+    if recblast_on:
+        return length_list
+    # Done
 
 
-        # if recblast_on:
-            # recblastout.close()
-            # return length_list
-
-
-def recblast(seqfile, target_species, fw_blast_db, infile_type="fasta", output_type="fasta",
-             query_species="Homo sapiens", blasttype='blastn', localblast1=True, localblast2=False,
-             rv_blast_db="RefSeq_Genes", evalue=0.001, identitiesperc=0.75, scoreperc=0.75, lengthperc=0.75,
-             megablast=True, email='', id_type='bruteforce', fw_source="psql", fw_id_db="", batch_size=50,
+def recblast(seqfile, target_species, fw_blast_db='chromosome', infile_type="fasta", output_type="fasta",
+             query_species="Homo sapiens", blasttype='blastn', localblast1=False, localblast2=False,
+             rv_blast_db="nt", expect=10, scoreperc=0.50, perc_ident=50, perc_length=0.5,
+             megablast=True, email='', id_type='brute', fw_source="psql", fw_id_db="", batch_size=50,
              passwd='', fw_id_db_version='1.0', rv_id_db="", rv_id_db_version='1.0', verbose=True):
     """By Reciprocal BLAST, finds orthologs in Species 2 of a list of genes from Species 1 and annotates them.
 
@@ -659,7 +788,7 @@ def recblast(seqfile, target_species, fw_blast_db, infile_type="fasta", output_t
     localblast1 -- Should the Forward BLAST be done locally or at NCBI? (default True)
     localblast2 -- Should the Reverse BLAST be done locally or at NCBI? (default False)
     rv_blast_db -- Database to be queried for the Reverse Blast to ID putative orthologs. (default "RefSeq_Genes")
-    evalue -- Maximum E-Value accepted from HSPs
+    expect -- Maximum E-Value accepted from HSPs
     identitiesperc -- Minimum percent identity accepted from HSPs
     scoreperc -- Minimum percentage from the top score that will be used as a cut-off for putative orthologs.
     lenghtperc -- Minimum fraction of the total length of the alignment that will be accepted.
@@ -670,94 +799,190 @@ def recblast(seqfile, target_species, fw_blast_db, infile_type="fasta", output_t
     from Bio import SeqIO
     from Bio.Blast import NCBIXML
 
-    print("Now starting...")
+    if verbose:
+        print("Now starting RecBlast...")
 
     # First loop will iterate over each sequence in a file, preferably FASTA but also allows for GenBank
     for index, seq_record in enumerate(SeqIO.parse(seqfile, infile_type)):
-        print("{}: {}".format(index, seq_record.name))
-        length = len(seq_record)    # For use in calculating the length percentage of every HSP
+        if verbose:
+            print("Forward BLAST - {}: {}".format(index+1, seq_record.name))
+        #length = len(seq_record)    # For use in calculating the length percentage of every HSP
 
-        forward_blast_output = Path("{0}_recblast_out".format(target_species) + '/' +
+        forward_blast_output = Path("{0}_recblast_out".format(target_species).replace(' ','_') + '/' +
                                     "{0}_{1}_{2}_to_{3}.xml".format(blasttype, seq_record.name, query_species,
-                                                                    target_species))
-        forward_id_score_output = Path("{0}_recblast_out".format(target_species) + '/' +
-                                       "{0}_{1}_{2}_to_{3}.ID_Scores.tmp".format(blasttype, seq_record.name,
-                                                                                 query_species, target_species))
-        recblast_output = Path("{0}_recblast_out".format(target_species) + '/' +
-                               "{0}_{1}.fasta".format(blasttype, seq_record.name))
-        # Forward Blast:
-        blast(seqfile=seqfile, target_species=target_species, database=fw_blast_db, query_species="Homo sapiens",
-              filetype=infile_type, blasttype=blasttype, localblast=localblast1, evalue=evalue, recblast_on=True,
-              megablast=megablast, blastoutput_custom=str(forward_blast_output))
+                                                                    target_species).replace(' ','_'))
 
+        forward_id_score_output = Path("{0}_recblast_out".format(target_species).replace(' ','_') + '/' +
+                                       "{0}_{1}_{2}_to_{3}.ID_Scores.tmp".format(blasttype, seq_record.name,
+                                                                                 query_species,
+                                                                                 target_species).replace(' ','_'))
+        recblast_output_unanno = Path("{0}_recblast_out".format(target_species).replace(' ','_') + '/' +
+                               "unannotated_{0}_{1}.tmp".format(blasttype, seq_record.name).replace(' ','_'))
+
+        try:
+            forward_blast_output.absolute().parent.mkdir(parents=True)
+        except FileExistsError:
+            pass
+        try:
+            forward_id_score_output.absolute().parent.mkdir(parents=True)
+        except:
+            pass
+        try:
+            recblast_output_unanno.absolute().parent.mkdir(parents=True)
+        except:
+            pass
+
+        # Forward Blast:
+        if (fw_blast_db == 'skip'):
+            if verbose:
+                print("Skipping Forward Blast!")
+            pass
+        else:
+            blast(seq_record=seq_record, target_species=target_species, database=fw_blast_db, query_species=query_species,
+                  filetype=infile_type, blasttype=blasttype, localblast=localblast1, expect=expect, recblast_on=True,
+                  megablast=megablast, blastoutput_custom=str(forward_blast_output), perc_ident=perc_ident)
+            if verbose:
+                print('Forward blast done!')
         # Easy part's over - now we need to get the top hits from the forward BLAST, ID them, then compile a new
         # FASTA file with sequences from Species 2 that will be annotated via the Reverse BLAST against Species 1.
 
         # First we load the primary BLAST XML results to a handle, read the file, then loop over all alignments
         # to get the top scoring HSPs for each (I don't trust NCBI to always give me a pre-sorted list beforehand).
+        # In addition, to really get to the crux of what this script should be doing, I also need to get the query
+        # start and end points for each HSP, to tile them over the query, in order to get the true query coverage.
+        # Furthermore I need to do the same for subject start and end so I can get a specific subrange for the sequence.
         with forward_blast_output.open("r") as forward_blasthits:
+            if verbose:
+                print('Opening Forward blast output: ', str(forward_blast_output.absolute()))
             blastrecord = NCBIXML.read(forward_blasthits)
-            align_scorelist = []
-            for alignment in blastrecord.alignments:
-                hsp_scorelist = sorted([hsp.score for hsp in alignment.hsps])
-                align_scorelist.append(hsp_scorelist[0])
+        align_scorelist = []
+        hsp_scorelist = []
+        subject_range = []
+        query_start_end = []
+        for alignment in blastrecord.alignments:
+            if verbose:
+                print('Sorting through alignment\'s HSPs to get top scores of all alignments...')
+            subject_range_hsp = []
+            query_start_end_hsp = []
+            for hsp in alignment.hsps:
+                hsp_scorelist.append(hsp.score)
+                subject_range_hsp.append(hsp.sbjct_start)
+                subject_range_hsp.append(hsp.sbjct_end)
+                query_start_end_hsp.append((hsp.query_start,hsp.query_end))
+            hsp_scorelist.sort(reverse=True)
+            query_start_end.append(i for i in merge_ranges(query_start_end_hsp))
+            subject_range.append((subject_range_hsp[0],subject_range_hsp[-1]))
+            if verbose:
+                print("HSP Score List: \n\t",hsp_scorelist)
+            align_scorelist.append(hsp_scorelist[0])
+            if verbose:
+                print("Alignment Score List: \n\t",align_scorelist)
+        if verbose:
+            print('Done with sorting!')
         # Two parts to this next loop: first we loop for each alignment. Next, we look though the HSPs in each
         # alignment file. If the HSP being considered has a score above the thresholds, we note down the ID and
         # score of that HSP and corresponding alignment; once we do that for one HSP in the series, we update the
-        # "blast_has_run" variable and proceed to skip to the next alignment result. This goes on until all
+        # "blast_got_hit" variable and proceed to skip to the next alignment result. This goes on until all
         # alignments have been considered, and so we now have a complete list of putative orthologs.
-            with forward_id_score_output.open("w") as f_id_out:
-                for align_index, alignment in enumerate(blastrecord.alignments):
-                    blast_has_run = False  # Every time we consider a new alignment we
-                    for hsp in alignment.hsps:
-                        if blast_has_run:
-                            break
-                        if (hsp.score >= (scoreperc * align_scorelist[align_index]) and hsp.expect <= evalue and
-                                hsp.align_length >= (length * lengthperc)
-                                and (int(hsp.identities)/int(hsp.align_length)) >= identitiesperc):
-                            f_id_out.write('{0}\t{1}\n'.format(alignment.title.replace('/t',' '), hsp.score))
-                            blast_has_run = True
-                        else:
-                            continue
+        with forward_id_score_output.open("w") as f_id_out:
+            if verbose:
+                print('Searching through alignments to get top-scoring hit IDs')
+            has_written = False
+            for align_index, alignment in enumerate(blastrecord.alignments):
+                blast_got_hit = False  # Every time we consider a new alignment
+                for hsp in alignment.hsps:
+                    if blast_got_hit:
+                        break
+                    if ((hsp.score >= (scoreperc * align_scorelist[align_index])) and (hsp.expect <= expect) and
+                    #        (hsp.align_length >= (blastrecord.query_length * perc_length))):
+                            (sum([i[-1]-i[0] for i in query_start_end[align_index]])/blastrecord.query_length
+                                 >= perc_length)):
+                        print('Found hit!')
+                        f_id_out.write('{0}\t{1}\t{2}\n'.format(alignment.title.replace('/t',' '),
+                                                                ':{0}-{1}'.format(subject_range[align_index][0],
+                                                                                  subject_range[align_index][-1]),
+                                                                hsp.score))
+                        has_written = True
+                        blast_got_hit = True
+                    else:
+                        continue
+                if not blast_got_hit:
+                    print('NOTE: FOR ALIGNMENT {}, NO HITS WERE FOUND!'.format(alignment.title))
+            if not has_written:
+                print('WARNING! FOR THIS RUN, NO HITS WERE WRITTEN TO FILE, CONTINUING TO NEXT SEQUENCE IN LIST!')
+                continue
         # Now, equiped with the list of hits, we need to look these up on a database and get their sequences as a
         # FASTA file.
-        fetchseq(id_file=str(forward_id_score_output), species=target_species, email=email, source=fw_source,
-                 output_type=output_type, output_name=str(recblast_output), db=fw_id_db, delim='\t', id_type=id_type,
+        if verbose:
+            print('Fetching sequences for ID\'ed hits...')
+        try:
+            fetchseq(id_file=str(forward_id_score_output), species=target_species, email=email, source=fw_source,
+                 output_type=output_type, output_name=str(recblast_output_unanno), db=fw_id_db, delim='\t', id_type=id_type,
                  batch_size=batch_size, passwd=passwd, version=fw_id_db_version, verbose=verbose)
-
+            if verbose:
+                print('Done with fetching!')
+        except IndexError:
+            print('WARNING! FETCHSEQ FAILED! SKIPPING THIS SEQUENCE!')
+            continue
+        # Little caveat: fetchseq by design appends a .[output_type] to the end of the file so we need to add that on:
+        recblast_output_unanno = str(recblast_output_unanno) + '.{}'.format(output_type)
         # Now that we have the sequences we can do the Reverse BLAST:
-        # Big caveat though: we need to do each target individually...  FIXME: DO SOMETHING ABOUT THIS.
-
-        seq_number = 0 # simple counter to figure out how many sequences I have
-        for entry_index, entry_record in enumerate(SeqIO.parse(str(recblast_output),"fasta")):
-            reverse_blast_output =Path("{0}_recblast_out".format(target_species),
+        # Big caveat though: we need to do each target individually.
+        if verbose:
+            print('Preparing for Reverse BLAST...')
+        recblast_output = Path("{0}_recblast_out".format(target_species).replace(' ','_') + '/' +
+                               "{0}_{1}.{2}".format(blasttype, seq_record.name,output_type).replace(' ','_'))
+        try:
+            recblast_output.absolute().parent.mkdir(parents=True)
+        except FileExistsError:
+            pass
+        for entry_index, entry_record in enumerate(SeqIO.parse(str(recblast_output_unanno),"fasta")):
+            reverse_blast_output =Path("{0}_recblast_out".format(target_species).replace(' ','_'),
                                        "{0}_{1}_{3}_to_{2}_{4}.xml".format(blasttype, seq_record.name,
-                                                                           query_species, target_species, entry_index))  # FIXME: entry_index is indexing every entry in recblast_output, rather than indexing only important hits. does this matter?
-            reverse_id_score_output = Path("{0}_recblast_out".format(target_species),
-                                           "{0}_{1}_{3}_to_{2}.ID_Scores.tmp".format(blasttype, seq_record.name,
-                                                                                     query_species, target_species))  # FIXME: this is definitely broken, need to figure out how to keep track of id_score without overwriting every loop.
-            blast(seqfile=entry_record, target_species=query_species, database=rv_blast_db,
+                                                                           query_species, target_species,
+                                                                           entry_index).replace(' ','_'))
+            try:
+                reverse_blast_output.absolute().parent.mkdir(parents=True)
+            except FileExistsError:
+                pass
+            # reverse_id_score_output = Path("{0}_recblast_out".format(target_species),
+            #                               "{0}_{1}_{3}_to_{2}.ID_Scores.tmp".format(blasttype, seq_record.name,
+            #                                                                        query_species, target_species))
+            if verbose:
+                print('Performing Reverse Blast:')
+            blast(seq_record=entry_record, target_species=query_species, database=rv_blast_db,
                   query_species=target_species, filetype=infile_type, blasttype=blasttype, localblast=localblast2,
-                  evalue=evalue, recblast_on=True, megablast=megablast, blastoutput_custom=str(reverse_blast_output))
+                  expect=expect, recblast_on=True, megablast=megablast, blastoutput_custom=str(reverse_blast_output),
+                  perc_ident=perc_ident)
+            if verbose:
+                print('Done with Reverse Blast!')
             with reverse_blast_output.open("r") as reverse_blast_hits:
+                if verbose:
+                    print('Getting top scores for each alignment...')
                 blastrecord2 = NCBIXML.read(reverse_blast_hits)
                 align_scorelist = []
                 for alignment in blastrecord2.alignments:
-                    hsp_scorelist = sorted([hsp.score for hsp in alignment.hsps])
+                    hsp_scorelist = sorted([hsp.score for hsp in alignment.hsps],reverse=True)
                     align_scorelist.append(hsp_scorelist[0])
-                with open(reverse_id_score_output, "w") as r_id_out:
+                # Now we have a list of the top score of each alignment for the current entry_record.
+                with recblast_output.open("w+") as rb_out:
+                    if verbose:
+                        print('Annotating BLAST results')
                     for align_index, alignment in enumerate(blastrecord2.alignments):
-                        blast_has_run = False
+                        blast_got_hit = False
                         for hsp in alignment.hsps:
-                            if blast_has_run:
+                            if blast_got_hit:
                                 break
-                            if (hsp.score >= (scoreperc * align_scorelist[align_index]) and hsp.expect <= evalue and
-                                    hsp.align_length >= (length * lengthperc)
-                                    and (int(hsp.identities)/int(hsp.align_length)) >= identitiesperc):
-                                r_id_out.write('{0}\t{1}\n'.format(alignment.title, hsp.score))
-                                blast_has_run = True
+                            if (hsp.score >= (scoreperc * align_scorelist[align_index]) and hsp.expect <= expect and
+                                    hsp.align_length >= (blastrecord.query_length * perc_length)):
+                                entry_record.id += '\t||{0} ({1})'.format(alignment.title, hsp.score)
+                                SeqIO.write(entry_record,rb_out,output_type)
+                                blast_got_hit = True
                             else:
                                 continue
+        if verbose:
+            print('DONE!!!!')
+        #Done!
 
             # Now we can finally use the
 
@@ -779,8 +1004,8 @@ def recblast(seqfile, target_species, fw_blast_db, infile_type="fasta", output_t
                         scorelist2.sort()
                         topscore2 = scorelist2[0]
                         for hsp2 in alignment2.hsps:
-                            if (hsp2.score >= scoreperc * topscore2 and hsp2.expect <= evalue and
-                                    hsp2.align_length >= length * lengthperc and
+                            if (hsp2.score >= scoreperc * topscore2 and hsp2.expect <= expect and
+                                    hsp2.align_length >= length * perc_length and
                                     hsp2.identities >= identitiesperc):
                                 hit_names.append(alignment2.title)
             reverse_blast_hits.close()
@@ -797,8 +1022,8 @@ def recblast(seqfile, target_species, fw_blast_db, infile_type="fasta", output_t
 
 """
 def recblast2(seqfile, target_species, fw_blast_db, infile_type="fasta", query_species="Homo sapiens", blasttype='blastp',
-              localblast1=True, localblast2=False, rv_blast_db="refseq_proteins", evalue=0.001, identitiesperc=0.75,
-              scoreperc=0.75, lengthperc=0.75, idthres='Score'):
+              localblast1=True, localblast2=False, rv_blast_db="refseq_proteins", expect=0.001, identitiesperc=0.75,
+              scoreperc=0.75, perc_length=0.75, idthres='Score'):
     # recblast2 uses the experimental Biopython SearchIO module. Honestly it looks so much cleaner in the docs so I
     # kinda
     # jumped ship to fix recblast without the whole "for x in y / for y in z / for z in a / ..." hell.
@@ -829,23 +1054,23 @@ def recblast2(seqfile, target_species, fw_blast_db, infile_type="fasta", query_s
             length = len(seq_record)
             if localblast1:
                 if blasttype == "blastn":
-                    NcbiblastnCommandline(query=recstring,db=fw_blast_db,evalue=evalue,outfmt=5,
+                    NcbiblastnCommandline(query=recstring,db=fw_blast_db,expect=expect,outfmt=5,
                                           out="{0}to{1}blast_{2}.xml".format(query_species, target_species,
                                                                              seq_record.name))
                 elif blasttype == "blastp":
-                    NcbiblastpCommandline(query=recstring,db=fw_blast_db,evalue=evalue,outfmt=5,
+                    NcbiblastpCommandline(query=recstring,db=fw_blast_db,expect=expect,outfmt=5,
                                           out="{0}to{1}blast_{2}.xml".format(query_species, target_species,
                                                                              seq_record.name))
                 elif blasttype == "blastx":
-                    NcbiblastxCommandline(query=recstring,db=fw_blast_db,evalue=evalue,outfmt=5,
+                    NcbiblastxCommandline(query=recstring,db=fw_blast_db,expect=expect,outfmt=5,
                                           out="{0}to{1}blast_{2}.xml".format(query_species, target_species,
                                                                              seq_record.name))
                 elif blasttype == "tblastx":
-                    NcbitblastxCommandline(query=recstring,db=fw_blast_db,evalue=evalue,outfmt=5,
+                    NcbitblastxCommandline(query=recstring,db=fw_blast_db,expect=expect,outfmt=5,
                                            out="{0}to{1}blast_{2}.xml".format(query_species, target_species,
                                                                               seq_record.name))
                 elif blasttype == "tblastn":
-                    NcbitblastnCommandline(query=recstring,db=fw_blast_db,evalue=evalue,outfmt=5,
+                    NcbitblastnCommandline(query=recstring,db=fw_blast_db,expect=expect,outfmt=5,
                                            out="{0}to{1}blast_{2}.xml".format(query_species, target_species,
                                                                               seq_record.name))
                 else:
@@ -856,7 +1081,7 @@ def recblast2(seqfile, target_species, fw_blast_db, infile_type="fasta", query_s
                                                                                                     seq_record.name)),
                           "w+") as fxml:
                     fxml.write(NCBIWWW.qblast(program=blasttype,database=fw_blast_db,sequence=seq_record.seq,
-                                              entrez_query=(target_species + "[ORGN]"),expect=evalue))
+                                              entrez_query=(target_species + "[ORGN]"),expect=expect))
 
             # Start Reciprocal Blast
             # First load the primary BLAST hits to a handle.
@@ -868,6 +1093,17 @@ def recblast2(seqfile, target_species, fw_blast_db, infile_type="fasta", query_s
             # Iterate through all the blast hits
 """
 
+def recblastMP(seqfile, target_species, fw_blast_db, infile_type="fasta", output_type="fasta",
+             query_species="Homo sapiens", blasttype='blastn', localblast1=False, localblast2=False,
+             rv_blast_db="nt", expect=10, scoreperc=0.75, perc_ident=50, perc_length = 50,
+             megablast=True, email='', id_type='brute', fw_source="psql", fw_id_db="", batch_size=50,
+             passwd='', fw_id_db_version='1.0', rv_id_db="", rv_id_db_version='1.0', verbose=True, n_threads=5):
+    import multiprocessing as mp
+
+    GLOBALLOCK = mp.Lock()
+
+
+    pass
 
 def sirblastalot():
     # is a function that, for a list of sequences, BLASTS them against a list of organisms of one's choice; the
