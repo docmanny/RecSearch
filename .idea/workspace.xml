@@ -1,0 +1,853 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="e5ba2e84-8c1c-41d0-9183-044959ae5dcb" name="Default" comment="">
+      <change type="DELETED" beforePath="$PROJECT_DIR$/modules.py" afterPath="" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/recblast_MP.py" afterPath="$PROJECT_DIR$/recblast_MP.py" />
+    </list>
+    <ignored path="untitled.iws" />
+    <ignored path=".idea/workspace.xml" />
+    <ignored path=".idea/dataSources.local.xml" />
+    <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
+    <option name="TRACKING_ENABLED" value="true" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="CoverageDataManager">
+    <SUITE FILE_PATH="coverage/RecBlast$modules.coverage" NAME="modules Coverage Results" MODIFIED="1485117532828" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+  </component>
+  <component name="CreatePatchCommitExecutor">
+    <option name="PATCH_PATH" value="" />
+  </component>
+  <component name="DatabaseView">
+    <option name="GROUP_SCHEMA" value="true" />
+    <option name="GROUP_CONTENTS" value="false" />
+    <option name="SORT_POSITIONED" value="false" />
+    <option name="SHOW_TABLE_DETAILS" value="true" />
+    <option name="SHOW_EMPTY_GROUPS" value="false" />
+    <option name="AUTO_SCROLL_FROM_SOURCE" value="false" />
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="default_target" />
+  <component name="FavoritesManager">
+    <favorites_list name="untitled" />
+  </component>
+  <component name="FileEditorManager">
+    <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
+      <file leaf-file-name="3gene.fasta" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/etc/3gene.fasta">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="5700">
+              <caret line="380" column="1" lean-forward="false" selection-start-line="380" selection-start-column="1" selection-end-line="380" selection-end-column="10" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="recblast_MP.py" pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/recblast_MP.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="114">
+              <caret line="273" column="119" lean-forward="true" selection-start-line="273" selection-start-column="119" selection-end-line="273" selection-end-column="119" />
+              <folding>
+                <marker date="1487111142439" expanded="true" signature="9108:9249" ph="UPDATE city " />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="recblast.py" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/recblast.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="309">
+              <caret line="253" column="31" lean-forward="false" selection-start-line="253" selection-start-column="31" selection-end-line="253" selection-end-column="31" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="example_parallel_postresql.py" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/example_parallel_postresql.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="1290">
+              <caret line="86" column="4" lean-forward="false" selection-start-line="86" selection-start-column="4" selection-end-line="89" selection-end-column="21" />
+              <folding>
+                <marker date="1487022066027" expanded="true" signature="1122:1263" ph="UPDATE city " />
+                <marker date="1487022066027" expanded="true" signature="1963:2013" ph="SELECT count... cities" />
+                <marker date="1487022066027" expanded="true" signature="2120:2167" ph="SELECT city_... city" />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+    </leaf>
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="FindInProjectRecents">
+    <findStrings>
+      <find>940742083</find>
+      <find>3459</find>
+      <find>id_range</find>
+      <find>Sequence Record</find>
+      <find>forward_</find>
+      <find>recblast_</find>
+      <find>recblast_output</find>
+      <find>recblast_output_unanno</find>
+      <find>blast_has_run</find>
+      <find>Perfor</find>
+      <find>[]</find>
+      <find>rb_ou</find>
+      <find>length_list</find>
+      <find>db.lookup(**{id_type: identifier})</find>
+      <find>compliment</find>
+      <find>Check database name and settings and try again.</find>
+      <find>biosql_DBSeqRecord_to_SeqRecord</find>
+      <find>Consumer</find>
+      <find>dtbse</find>
+      <find>dtbase.lookup\([\D\d]*\)</find>
+      <find>dtbase.lookup(**{</find>
+      <find>num_jobs</find>
+      <find>len(id_list)</find>
+      <find>bioSeqLookupCascade</find>
+      <find>fetchseqMP</find>
+      <find>FetchSeqMP</find>
+      <find>fetchseq</find>
+      <find>fs</find>
+      <find>num_searches</find>
+      <find>num_processes</find>
+    </findStrings>
+    <replaceStrings>
+      <replace>infile_type</replace>
+      <replace>out=str(blastoutput_custom)</replace>
+      <replace>query=str(seq_record.seq)</replace>
+      <replace>str(blastoutput_custom)</replace>
+      <replace>recstring</replace>
+      <replace>perc_length</replace>
+      <replace>recblast_output_unano</replace>
+      <replace>unanno</replace>
+      <replace>.mkdir(parents=True)</replace>
+      <replace>.absolute().parent.mkdir(parents=True)</replace>
+      <replace>expect</replace>
+      <replace>[i[2] for i in id_list_ids]</replace>
+      <replace>recblast_output_unanno_TMP</replace>
+      <replace>blast_got_hit</replace>
+      <replace>iosql_DBSeqRecord_to_SeqRecord(db.lookup(**{id_type: identifier}))</replace>
+      <replace>biosql_DBSeqRecord_to_SeqRecord(db.lookup(**{id_type: identifier}))</replace>
+      <replace>complement</replace>
+      <replace>dtbase</replace>
+      <replace>seqrec</replace>
+      <replace>idents</replace>
+      <replace>len(id_list)</replace>
+      <replace>num_jobs</replace>
+      <replace>biosql_seq_lookup_cascade</replace>
+      <replace>FetchSeqMP</replace>
+      <replace>GetSeqMP</replace>
+      <replace>getseq</replace>
+      <replace>gs</replace>
+      <replace>num_processes</replace>
+      <replace>num</replace>
+      <replace>num_proc</replace>
+    </replaceStrings>
+  </component>
+  <component name="Git.Settings">
+    <option name="PREVIOUS_COMMIT_AUTHORS">
+      <list>
+        <option value="docmanny &lt;juan@vazquez.bio&gt;" />
+        <option value="jmvazquez &lt;juan@vazquez.bio&gt;" />
+        <option value="jmvazquez" />
+      </list>
+    </option>
+    <option name="UPDATE_TYPE" value="MERGE" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="SIGN_OFF_COMMIT" value="true" />
+  </component>
+  <component name="IdeDocumentHistory">
+    <option name="CHANGED_PATHS">
+      <list>
+        <option value="$PROJECT_DIR$/asdfasdf" />
+        <option value="$PROJECT_DIR$/etc/test_10-id.output" />
+        <option value="$PROJECT_DIR$/test.fasta" />
+        <option value="$PROJECT_DIR$/outfile.fasta" />
+        <option value="$PROJECT_DIR$/etc/testout.fasta" />
+        <option value="$PROJECT_DIR$/etc/BRCA.fasta" />
+        <option value="$PROJECT_DIR$/etc/outblast.xml" />
+        <option value="$PROJECT_DIR$/scratch.py" />
+        <option value="$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_Homo_sapiens_to_Myotis_lucifugus.ID_Scores.tmp" />
+        <option value="$PROJECT_DIR$/MyoLuc2.0.index" />
+        <option value="$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_Homo_sapiens_to_Myotis_lucifugus.xml" />
+        <option value="$PROJECT_DIR$/Myotis_lucifugus_recblast_out/unannotated_blastn_NM_007294.3.tmp.fasta" />
+        <option value="$PROJECT_DIR$/Playground.ipynb" />
+        <option value="$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3.fasta" />
+        <option value="$PROJECT_DIR$/Myotis_lucifugus_recblast_out/APCs.fasta" />
+        <option value="$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_022662.3.fasta" />
+        <option value="$PROJECT_DIR$/example_parallel_postresql.py" />
+        <option value="$PROJECT_DIR$/modules.py" />
+        <option value="$PROJECT_DIR$/BioSQL_Wrappers.py" />
+        <option value="$PROJECT_DIR$/recblast_MP.py" />
+        <option value="$PROJECT_DIR$/recblast.py" />
+      </list>
+    </option>
+  </component>
+  <component name="JsBuildToolGruntFileManager" detection-done="true" sorting="DEFINITION_ORDER" />
+  <component name="JsBuildToolPackageJson" detection-done="true" sorting="DEFINITION_ORDER" />
+  <component name="JsGulpfileManager">
+    <detection-done>true</detection-done>
+    <sorting>DEFINITION_ORDER</sorting>
+  </component>
+  <component name="ProjectFrameBounds">
+    <option name="y" value="27" />
+    <option name="width" value="1920" />
+    <option name="height" value="1053" />
+  </component>
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+  <component name="ProjectView">
+    <navigator currentView="ProjectPane" proportions="" version="1">
+      <flattenPackages />
+      <showMembers />
+      <showModules />
+      <showLibraryContents />
+      <hideEmptyPackages />
+      <abbreviatePackageNames />
+      <autoscrollToSource />
+      <autoscrollFromSource />
+      <sortByType />
+      <manualOrder />
+      <foldersAlwaysOnTop value="true" />
+    </navigator>
+    <panes>
+      <pane id="Scratches" />
+      <pane id="Scope" />
+      <pane id="ProjectPane">
+        <subPane>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="RecBlast" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="RecBlast" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+        </subPane>
+      </pane>
+    </panes>
+  </component>
+  <component name="PropertiesComponent">
+    <property name="WebServerToolWindowFactoryState" value="false" />
+    <property name="settings.editor.selected.configurable" value="preferences.general" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$/../.." />
+    <property name="js.eslint.eslintPackage" value="" />
+    <property name="SearchEverywhereHistoryKey" value="&#9;FILE&#9;file:///home/manny/Scripts/RecBlast/etc/7FSA56NT013_2.xml" />
+  </component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/etc" />
+    </key>
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+      <recent name="C:\Users\Papo\OneDrive\Documents\PycharmProjects\untitled" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.modules">
+    <configuration default="false" name="modules" type="PythonConfigurationType" factoryName="Python" temporary="true">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/modules.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <method />
+    </configuration>
+    <configuration default="true" type="DjangoTestsConfigurationType" factoryName="Django tests">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="TARGET" value="" />
+      <option name="SETTINGS_FILE" value="" />
+      <option name="CUSTOM_SETTINGS" value="false" />
+      <option name="USE_OPTIONS" value="false" />
+      <option name="OPTIONS" value="" />
+      <method />
+    </configuration>
+    <configuration default="true" type="JavaScriptTestRunnerProtractor" factoryName="Protractor">
+      <config-file value="" />
+      <node-interpreter value="project" />
+      <envs />
+      <method />
+    </configuration>
+    <configuration default="true" type="JavascriptDebugType" factoryName="JavaScript Debug">
+      <method />
+    </configuration>
+    <configuration default="true" type="PyBehaveRunConfigurationType" factoryName="Behave">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="ADDITIONAL_ARGS" value="" />
+      <method />
+    </configuration>
+    <configuration default="true" type="PyLettuceRunConfigurationType" factoryName="Lettuce">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="ADDITIONAL_ARGS" value="" />
+      <method />
+    </configuration>
+    <configuration default="true" type="PythonConfigurationType" factoryName="Python">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <method />
+    </configuration>
+    <configuration default="true" type="Tox" factoryName="Tox">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <module name="untitled" />
+      <method />
+    </configuration>
+    <configuration default="true" type="js.build_tools.gulp" factoryName="Gulp.js">
+      <node-interpreter>project</node-interpreter>
+      <node-options />
+      <gulpfile />
+      <tasks />
+      <arguments />
+      <envs />
+      <method />
+    </configuration>
+    <configuration default="true" type="js.build_tools.npm" factoryName="npm">
+      <command value="run" />
+      <scripts />
+      <node-interpreter value="project" />
+      <envs />
+      <method />
+    </configuration>
+    <configuration default="true" type="tests" factoryName="Attests">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="" />
+      <option name="CLASS_NAME" value="" />
+      <option name="METHOD_NAME" value="" />
+      <option name="FOLDER_NAME" value="" />
+      <option name="TEST_TYPE" value="TEST_SCRIPT" />
+      <option name="PATTERN" value="" />
+      <option name="USE_PATTERN" value="false" />
+      <method />
+    </configuration>
+    <configuration default="true" type="tests" factoryName="Doctests">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="" />
+      <option name="CLASS_NAME" value="" />
+      <option name="METHOD_NAME" value="" />
+      <option name="FOLDER_NAME" value="" />
+      <option name="TEST_TYPE" value="TEST_SCRIPT" />
+      <option name="PATTERN" value="" />
+      <option name="USE_PATTERN" value="false" />
+      <method />
+    </configuration>
+    <configuration default="true" type="tests" factoryName="Nosetests">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="" />
+      <option name="CLASS_NAME" value="" />
+      <option name="METHOD_NAME" value="" />
+      <option name="FOLDER_NAME" value="" />
+      <option name="TEST_TYPE" value="TEST_SCRIPT" />
+      <option name="PATTERN" value="" />
+      <option name="USE_PATTERN" value="false" />
+      <option name="PARAMS" value="" />
+      <option name="USE_PARAM" value="false" />
+      <method />
+    </configuration>
+    <configuration default="true" type="tests" factoryName="Unittests">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="" />
+      <option name="CLASS_NAME" value="" />
+      <option name="METHOD_NAME" value="" />
+      <option name="FOLDER_NAME" value="" />
+      <option name="TEST_TYPE" value="TEST_SCRIPT" />
+      <option name="PATTERN" value="" />
+      <option name="USE_PATTERN" value="false" />
+      <option name="PUREUNITTEST" value="true" />
+      <option name="PARAMS" value="" />
+      <option name="USE_PARAM" value="false" />
+      <method />
+    </configuration>
+    <configuration default="true" type="tests" factoryName="py.test">
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="untitled" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="" />
+      <option name="CLASS_NAME" value="" />
+      <option name="METHOD_NAME" value="" />
+      <option name="FOLDER_NAME" value="" />
+      <option name="TEST_TYPE" value="TEST_SCRIPT" />
+      <option name="PATTERN" value="" />
+      <option name="USE_PATTERN" value="false" />
+      <option name="testToRun" value="" />
+      <option name="keywords" value="" />
+      <option name="params" value="" />
+      <option name="USE_PARAM" value="false" />
+      <option name="USE_KEYWORD" value="false" />
+      <method />
+    </configuration>
+    <list size="1">
+      <item index="0" class="java.lang.String" itemvalue="Python.modules" />
+    </list>
+    <recent_temporary>
+      <list size="1">
+        <item index="0" class="java.lang.String" itemvalue="Python.modules" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="ShelveChangesManager" show_recycled="false">
+    <option name="remove_strategy" value="false" />
+  </component>
+  <component name="SvnConfiguration">
+    <configuration />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="e5ba2e84-8c1c-41d0-9183-044959ae5dcb" name="Default" comment="" />
+      <created>1478049404767</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1478049404767</updated>
+    </task>
+    <task id="LOCAL-00001" summary="v0.1&#10;&#10;Initial commit. Pretty sure RecBlast won't work, and so I'll have to rewrite the reciprocal part of RecBlast.">
+      <created>1479487516080</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1479487516080</updated>
+    </task>
+    <task id="LOCAL-00002" summary="v0.2&#10;- Began work on RecBlast2, based on the SearchIO package (looks cleaner)&#10;- Fixed the forward BLAST section of RecBlast to conform to PEP8&#10;- Fixed file nomenclature to make I/O more legible&#10;">
+      <created>1484260434978</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1484260434979</updated>
+    </task>
+    <task id="LOCAL-00003" summary="V0.4&#10;- Checked all of RecBlast for PEP8&#10;- Major rewrite of RecBlast.&#10;- Added blast()">
+      <created>1484282236758</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1484282236758</updated>
+    </task>
+    <task id="LOCAL-00004" summary="V0.5&#10;- Added and completed:&#10;    - biosql_addrecord&#10;    - biosql_recordids&#10;    - biosql_getrecord&#10; - Added and &quot;completed&quot; fetchseq, just have to test and debug it&#10; - Blast is also done, just needs testing and debugging&#10; - Some changes in RecBlast, remains a WIP&#10; - Commented out RecBlast2, the concept of the rewrite using SearchIO will be revisited after I get RecBlast done&#10; - More formally declared sirblastalot, and added TODO&#10; - Added TODOs all-around&#10; - Added some FIXMEs to areas that were written, but which even before testing I know need more work&#10;  - Misc. PEP8 changes.&#10;">
+      <created>1484795715824</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1484795715824</updated>
+    </task>
+    <task id="LOCAL-00005" summary="V0.5.2&#10;- Added and completed:&#10;    - biosql_addrecord&#10;    - biosql_recordids&#10;    - biosql_getrecord&#10; - Added and &quot;completed&quot; fetchseq, just have to test and debug it&#10; - Blast is also done, just needs testing and debugging&#10; - Some changes in RecBlast, remains a WIP&#10; - Commented out RecBlast2, the concept of the rewrite using SearchIO will be revisited after I get RecBlast done&#10; - More formally declared sirblastalot, and added TODO&#10; - Added TODOs all-around&#10; - Added some FIXMEs to areas that were written, but which even before testing I know need more work&#10;  - Misc. PEP8 changes.&#10;">
+      <created>1485117266640</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1485117266640</updated>
+    </task>
+    <task id="LOCAL-00006" summary="V0.5.2&#10;- Added and completed:&#10;    - biosql_addrecord&#10;    - biosql_recordids&#10;    - biosql_getrecord&#10; - Added and &quot;completed&quot; fetchseq, just have to test and debug it&#10; - Blast is also done, just needs testing and debugging&#10; - Some changes in RecBlast, remains a WIP&#10; - Commented out RecBlast2, the concept of the rewrite using SearchIO will be revisited after I get RecBlast done&#10; - More formally declared sirblastalot, and added TODO&#10; - Added TODOs all-around&#10; - Added some FIXMEs to areas that were written, but which even before testing I know need more work&#10;  - Misc. PEP8 changes.&#10;V0.6&#10;- biosql_getseq is done&#10;- fetchseq is done&#10;- blast is done">
+      <created>1485535421076</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1485535421076</updated>
+    </task>
+    <task id="LOCAL-00007" summary="V0.9&#10; - recblast is almost 100% working, just needs some exception handling for empty searches&#10; - One last tweak needed, need to be able to calibrate the sequence range related to the BLAST hit to the actual content of the sequence fetched.">
+      <created>1486427762539</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1486427762539</updated>
+    </task>
+    <task id="LOCAL-00008" summary="V1.0&#10; - recblast is 100% working aside from maybe a little more overzealous error handling&#10; - recblast_MP is well on its way. Its a parallelized, Object-Oriented RecBlast. Its all you could ever want in a script.&#10; - V For Verbose Output implemented.">
+      <created>1487036221657</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1487036221657</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
+    <servers />
+  </component>
+  <component name="TodoView">
+    <todo-panel id="selected-file">
+      <is-autoscroll-to-source value="true" />
+    </todo-panel>
+    <todo-panel id="all">
+      <are-packages-shown value="true" />
+      <is-autoscroll-to-source value="true" />
+    </todo-panel>
+  </component>
+  <component name="ToolWindowManager">
+    <frame x="0" y="27" width="1920" height="1053" extended-state="6" />
+    <editor active="false" />
+    <layout>
+      <window_info id="Project" active="true" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.1965812" sideWeight="0.8852224" order="0" side_tool="false" content_ui="combo" />
+      <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.21405049" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
+      <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.3289689" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
+      <window_info id="Database" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
+      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32711306" sideWeight="0.5" order="8" side_tool="false" content_ui="tabs" />
+      <window_info id="Python Console" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.31064764" sideWeight="0.5" order="9" side_tool="false" content_ui="tabs" />
+      <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.24583334" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Terminal" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32821077" sideWeight="0.5" order="11" side_tool="false" content_ui="tabs" />
+      <window_info id="Favorites" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.19017094" sideWeight="0.11477762" order="2" side_tool="true" content_ui="tabs" />
+      <window_info id="Cvs" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="4" side_tool="false" content_ui="tabs" />
+      <window_info id="Messages" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.32821077" sideWeight="0.5" order="10" side_tool="false" content_ui="tabs" />
+      <window_info id="Message" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
+      <window_info id="Commander" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
+      <window_info id="Inspection" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="5" side_tool="false" content_ui="tabs" />
+      <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32821077" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
+      <window_info id="Hierarchy" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="2" side_tool="false" content_ui="combo" />
+      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32821077" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Ant Build" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Debug" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.39956093" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
+    </layout>
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="processedProjectFiles" value="true" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="RECENTLY_FILTERED_USER_GROUPS">
+                <collection />
+              </option>
+              <option name="RECENTLY_FILTERED_BRANCH_GROUPS">
+                <collection />
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="Vcs.Log.UiProperties">
+    <option name="RECENTLY_FILTERED_USER_GROUPS">
+      <collection />
+    </option>
+    <option name="RECENTLY_FILTERED_BRANCH_GROUPS">
+      <collection />
+    </option>
+  </component>
+  <component name="VcsContentAnnotationSettings">
+    <option name="myLimit" value="2678400000" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="CHECK_CODE_SMELLS_BEFORE_PROJECT_COMMIT" value="true" />
+    <option name="CHECK_NEW_TODO" value="false" />
+    <MESSAGE value="v0.1&#10;&#10;Initial commit. Pretty sure RecBlast won't work, and so I'll have to rewrite the reciprocal part of RecBlast." />
+    <MESSAGE value="v0.2&#10;- Began work on RecBlast2, based on the SearchIO package (looks cleaner)&#10;- Fixed the forward BLAST section of RecBlast to conform to PEP8&#10;- Fixed file nomenclature to make I/O more legible&#10;" />
+    <MESSAGE value="V0.4&#10;- Checked all of RecBlast for PEP8&#10;- Major rewrite of RecBlast.&#10;- Added blast()" />
+    <MESSAGE value="V0.5&#10;- Added and completed:&#10;    - biosql_addrecord&#10;    - biosql_recordids&#10;    - biosql_getrecord&#10; - Added and &quot;completed&quot; fetchseq, just have to test and debug it&#10; - Blast is also done, just needs testing and debugging&#10; - Some changes in RecBlast, remains a WIP&#10; - Commented out RecBlast2, the concept of the rewrite using SearchIO will be revisited after I get RecBlast done&#10; - More formally declared sirblastalot, and added TODO&#10; - Added TODOs all-around&#10; - Added some FIXMEs to areas that were written, but which even before testing I know need more work&#10;  - Misc. PEP8 changes.&#10;" />
+    <MESSAGE value="V0.5.2&#10;- Added and completed:&#10;    - biosql_addrecord&#10;    - biosql_recordids&#10;    - biosql_getrecord&#10; - Added and &quot;completed&quot; fetchseq, just have to test and debug it&#10; - Blast is also done, just needs testing and debugging&#10; - Some changes in RecBlast, remains a WIP&#10; - Commented out RecBlast2, the concept of the rewrite using SearchIO will be revisited after I get RecBlast done&#10; - More formally declared sirblastalot, and added TODO&#10; - Added TODOs all-around&#10; - Added some FIXMEs to areas that were written, but which even before testing I know need more work&#10;  - Misc. PEP8 changes.&#10;" />
+    <MESSAGE value="V0.5.2&#10;- Added and completed:&#10;    - biosql_addrecord&#10;    - biosql_recordids&#10;    - biosql_getrecord&#10; - Added and &quot;completed&quot; fetchseq, just have to test and debug it&#10; - Blast is also done, just needs testing and debugging&#10; - Some changes in RecBlast, remains a WIP&#10; - Commented out RecBlast2, the concept of the rewrite using SearchIO will be revisited after I get RecBlast done&#10; - More formally declared sirblastalot, and added TODO&#10; - Added TODOs all-around&#10; - Added some FIXMEs to areas that were written, but which even before testing I know need more work&#10;  - Misc. PEP8 changes.&#10;V0.6&#10;- biosql_getseq is done&#10;- fetchseq is done&#10;- blast is done" />
+    <MESSAGE value="V0.9&#10; - recblast is almost 100% working, just needs some exception handling for empty searches&#10; - One last tweak needed, need to be able to calibrate the sequence range related to the BLAST hit to the actual content of the sequence fetched." />
+    <MESSAGE value="V1.0&#10; - recblast is 100% working aside from maybe a little more overzealous error handling&#10; - recblast_MP is well on its way. Its a parallelized, Object-Oriented RecBlast. Its all you could ever want in a script.&#10; - V For Verbose Output implemented." />
+    <option name="LAST_COMMIT_MESSAGE" value="V1.0&#10; - recblast is 100% working aside from maybe a little more overzealous error handling&#10; - recblast_MP is well on its way. Its a parallelized, Object-Oriented RecBlast. Its all you could ever want in a script.&#10; - V For Verbose Output implemented." />
+    <option name="OPTIMIZE_IMPORTS_BEFORE_PROJECT_COMMIT" value="true" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <option name="time" value="5" />
+    </breakpoint-manager>
+    <watches-manager />
+  </component>
+  <component name="editorHistoryManager">
+    <entry file="file://$PROJECT_DIR$/modules.py" />
+    <entry file="file://$PROJECT_DIR$/Playground.ipynb" />
+    <entry file="file://$PROJECT_DIR$/modules.py" />
+    <entry file="file://$PROJECT_DIR$/Playground.ipynb" />
+    <entry file="file://$PROJECT_DIR$/modules.py" />
+    <entry file="file://$PROJECT_DIR$/Playground.ipynb" />
+    <entry file="file://$PROJECT_DIR$/.etc/3gene.fasta" />
+    <entry file="file://$PROJECT_DIR$/modules_bk.py" />
+    <entry file="file:///usr/lib64/python3.4/site-packages/Bio/Blast/NCBIXML.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="103">
+          <caret line="359" column="45" lean-forward="false" selection-start-line="359" selection-start-column="45" selection-end-line="359" selection-end-column="45" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/7FSA56NT013_1.xml">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/7FSA56NT013_2.xml">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/7FSA56NT013-Alignment.xml">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="330">
+          <caret line="58" column="103" lean-forward="false" selection-start-line="58" selection-start-column="11" selection-end-line="58" selection-end-column="103" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/7FSA56NT013_3.xml">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="60">
+          <caret line="4" column="33" lean-forward="true" selection-start-line="4" selection-start-column="33" selection-end-line="4" selection-end-column="33" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/asdfasdf" />
+    <entry file="file://$PROJECT_DIR$/test_recblast_forward_output.output" />
+    <entry file="file://$PROJECT_DIR$/test.fasta" />
+    <entry file="file://$PROJECT_DIR$/outfile.fasta" />
+    <entry file="file://$PROJECT_DIR$/etc/testout.fasta">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-45">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/outblast.xml">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-2430">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/outblast2.xml">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/test_10-id.output">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="14" lean-forward="true" selection-start-line="0" selection-start-column="14" selection-end-line="0" selection-end-column="14" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/scratch.py" />
+    <entry file="file://$PROJECT_DIR$/MyoLuc2.0.index" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_Homo_sapiens_to_Myotis_lucifugus_id.tmp" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NG_017013.2:5001-24149_Homo_sapiens_to_Myotis_lucifugus.xml" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NG_017013.2:5001-24149_Homo_sapiens_to_Myotis_lucifugus.ID_Scores.tmp" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_Myotis_lucifugus_to_Homo_sapiens_1.xml" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3.tmp" />
+    <entry file="file://$PROJECT_DIR$/test.xml" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_Myotis_lucifugus_to_Homo_sapiens_0.xml" />
+    <entry file="file://$PROJECT_DIR$/bla.fasta" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_Homo_sapiens_to_Myotis_lucifugus.ID_Scores.tmp" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_Homo_sapiens_to_Myotis_lucifugus.xml" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/unannotated_blastn_NM_007294.3.tmp.fasta" />
+    <entry file="file://$PROJECT_DIR$/Playground.ipynb" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_016238.2.fasta" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_022662.3_tmp/unannotated_blastn_NM_022662.3.tmp.fasta" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_022662.3.fasta" />
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_001078645.2_tmp/blastn_NM_001078645.2_Homo_sapiens_to_Myotis_lucifugus.ID_Scores.tmp" />
+    <entry file="file://$PROJECT_DIR$/etc/APCs.fasta">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="7260">
+          <caret line="484" column="68" lean-forward="false" selection-start-line="484" selection-start-column="68" selection-end-line="484" selection-end-column="68" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3.fasta">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_tmp/blastn_NM_007294.3_Homo_sapiens_to_Myotis_lucifugus.ID_Scores.tmp">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="15">
+          <caret line="1" column="29" lean-forward="false" selection-start-line="1" selection-start-column="17" selection-end-line="1" selection-end-column="29" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/BRCA.fasta">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1560">
+          <caret line="104" column="14" lean-forward="false" selection-start-line="104" selection-start-column="14" selection-end-line="104" selection-end-column="14" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Myotis_lucifugus_recblast_out/blastn_NM_007294.3_tmp/unannotated_blastn_NM_007294.3.tmp.fasta">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="240">
+          <caret line="16" column="13" lean-forward="true" selection-start-line="16" selection-start-column="1" selection-end-line="16" selection-end-column="13" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/etc/3gene.fasta">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="5700">
+          <caret line="380" column="1" lean-forward="false" selection-start-line="380" selection-start-column="1" selection-end-line="380" selection-end-column="10" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/modules.py" />
+    <entry file="file://$PROJECT_DIR$/BioSQL_Wrappers.py" />
+    <entry file="file://$PROJECT_DIR$/example_parallel_postresql.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1290">
+          <caret line="86" column="4" lean-forward="false" selection-start-line="86" selection-start-column="4" selection-end-line="89" selection-end-column="21" />
+          <folding>
+            <marker date="1487022066027" expanded="true" signature="1122:1263" ph="UPDATE city " />
+            <marker date="1487022066027" expanded="true" signature="1963:2013" ph="SELECT count... cities" />
+            <marker date="1487022066027" expanded="true" signature="2120:2167" ph="SELECT city_... city" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/misc_code.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="654">
+          <caret line="1131" column="14" lean-forward="true" selection-start-line="845" selection-start-column="0" selection-end-line="1131" selection-end-column="14" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/recblast.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="309">
+          <caret line="253" column="31" lean-forward="false" selection-start-line="253" selection-start-column="31" selection-end-line="253" selection-end-column="31" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/recblast_MP.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="114">
+          <caret line="273" column="119" lean-forward="true" selection-start-line="273" selection-start-column="119" selection-end-line="273" selection-end-column="119" />
+          <folding>
+            <marker date="1487111142439" expanded="true" signature="9108:9249" ph="UPDATE city " />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+  </component>
+  <component name="masterDetails">
+    <states>
+      <state key="ScopeChooserConfigurable.UI">
+        <settings>
+          <splitter-proportions>
+            <option name="proportions">
+              <list>
+                <option value="0.2" />
+              </list>
+            </option>
+          </splitter-proportions>
+        </settings>
+      </state>
+    </states>
+  </component>
+</project>

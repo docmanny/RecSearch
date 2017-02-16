@@ -97,3 +97,8 @@ tmp/
 *.fa
 *.gb
 
+# Test Files
+etc/
+Myotis*/
+recblasttest_*/
+
