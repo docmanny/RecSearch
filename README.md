@@ -1,10 +1,4 @@
-Miscellaneous-Code
-===================
-This repo holds all of the code that hasn't found its way into a dedicated repository yet. As my default, its purpose is to simply
-back up all my code of value in a general fashion. 
+RecBlast
+========
 
-Functions contained within:
-----------------------
-- All of my BioSQL wrappers;
-- RecBlast and all associated functions (which, now that its fully functional, will get its own repo);
-- RecBlastMP, which is a multiprocess-enabled RecBlast (aka RecBlast2.0).
+This repo contains two modules, RecBlast and RecBlastMP. Recblast is a modules that can do Reciprocal-Best-Hit-BLAST searches between two species, given a list of sequences. RecBlastMP is a work-in-progress that simply adapts RecBlast into a object-oriented, multiprocess framework for efficiency. 
