@@ -81,8 +81,8 @@ def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, verbose=
     return seqrec
 
 
-def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession', driver="psycopg2", user="postgres",
-                         host="localhost", db="bioseqdb", num_proc=2, verbose=True):
+def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='accession', driver="psycopg2", user="postgres",
+                         host="localhost", db="bioseqdb", num_proc=2, verbose=True, server=None):
     """
 
     :param sub_db_name:
@@ -104,7 +104,7 @@ def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession
     """
 
     class GetSeqMP(multiprocessing.Process):
-        def __init__(self, task_queue, result_queue, db, host, driver, user, passwd, sub_db_name, verbose):
+        def __init__(self, task_queue, result_queue, db, host, driver, user, passwd, sub_db_name, verbose, server=None):
             multiprocessing.Process.__init__(self)
             self.task_queue = task_queue
             self.result_queue = result_queue
@@ -115,12 +115,12 @@ def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession
             self.password = passwd
             self.sub_db_name = sub_db_name
             self.verbose = verbose
-            self.server = BioSeqDatabase.open_database(driver=self.driver, user=self.user, passwd=self.password,
+            if server is None:
+                self.server = BioSeqDatabase.open_database(driver=self.driver, user=self.user, passwd=self.password,
                                                        host=self.host, db=self.db)
-
-        # Understand this better
+            else:
+                self.server=server
         def run(self):
-            proc_name = self.name
             while True:
                 next_task = self.task_queue.get()
                 if next_task is None:
@@ -128,7 +128,7 @@ def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession
                         print('Tasks Complete')
                     self.task_queue.task_done()
                     break
-                answer = next_task(connection=self.server, sub_db_name=self.sub_db_name)
+                answer = next_task(server=self.server, sub_db_name=self.sub_db_name)
                 self.task_queue.task_done()
                 self.result_queue.put(answer)
 
@@ -138,8 +138,7 @@ def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession
             self.identifier = identifier
             self.verbose = verbose
 
-        def __call__(self, sub_db_name, connection):
-            server = connection
+        def __call__(self, sub_db_name, server):
             dtbase = server[sub_db_name]
             seqrec = biosql_seq_lookup_cascade(dtbase=dtbase, sub_db_name=sub_db_name, id_type=self.id_type,
                                                identifier=self.identifier, verbose=self.verbose)
@@ -160,7 +159,7 @@ def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession
     num_jobs = len(id_list)
     seqdict = dict()
     getseqs = [GetSeqMP(idents, results, db=db, host=host, driver=driver, user=user, passwd=passwd,
-                        sub_db_name=sub_db_name, verbose=verbose) for i in range(num_proc)]
+                        sub_db_name=sub_db_name, verbose=verbose, server=server) for i in range(num_proc)]
     for gs in getseqs:
         gs.start()
 
@@ -178,32 +177,18 @@ def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession
     return seqdict
 
 
-def fetchseqMP(ids, species, email='', source="psql", output_type="fasta", output_name="outfile",
-               db="nucleotide", delim='\t', id_type='accession', batch_size=50, passwd='', version='1.0', verbose=1,
+def fetchseqMP(ids, species, email='', user='', id_type='brute', host='localhost', driver='psycopg2', source="SQL", output_type="fasta",
+               output_name="outfile", db="bioseqdb", delim='\t', id_type='accession', batch_size=50, passwd='',
+               version='1.0', verbose=1,
                n_threads=2, lock=None):
     class FetchSeqMP(multiprocessing.Process):
-        def __init__(self, id_queue, seq_out_queue, lock):
+        def __init__(self, id_queue, seq_out_queue, id_type,  species, email, source, output_type, output_name, db, version,
+                     delim, id_type, batch_size, passwd, verbose, server, n_threads, lock):
             multiprocessing.Process.__init__(self)
             self.id_queue = id_queue
             self.seq_out_queue = seq_out_queue
-            self.lock = lock
-
-        def run(self):  # The meat of the script
-            while True:
-                fs_instance = self.id_queue.get()
-                if fs_instance is None:
-                    self.id_queue.task_done()
-                    break
-                output = fs_instance(lock=self.lock)
-                self.id_queue.task_done()
-                self.seq_out_queue.put(output)
-            return
-
-    class FetchSeq(object):  # Todo: Split this up into smaller parts, cause this is too huge.
-        def __init__(self, seq_id, species, email, source, output_type, output_name, db, version,
-                     delim, id_type, batch_size, passwd, verbose):
-            self.seq_id = seq_id
             self.species = species
+            self.verbose = verbose
             self.email = email
             self.source = source
             self.output_type = output_type
@@ -214,34 +199,35 @@ def fetchseqMP(ids, species, email='', source="psql", output_type="fasta", outpu
             self.id_type = id_type
             self.batch_size = batch_size
             self.passwd = passwd
+            self.lock = lock
+            self.server = server
+            self.n_threads = n_threads
 
-        def parse_id_header(self, seq_id):
-            if verbose:
-                print('Reading ID File...')
-            id_prelist = [line.strip() for line in infile_handle]  # list of each line in the file
-            id_prelist = list(filter(None, id_prelist))
-            if verbose:
-                print('Full header for Entry 1:')
-                try:
-                    print(id_prelist[0])
-                except IndexError:
-                    print('No items found!')
-                    raise
+        def run(self):  # The meat of the script
+            while True:
+                fs_instance = self.id_queue.get()
+                if fs_instance is None:
+                    self.id_queue.task_done()
+                    break
+                output = fs_instance(passwd=self.passwd, id_type=self.id_type, driver=self.driver, user=self.user,  # Todo: check inheritence of everything here
+                                     host=self.host, db=self.db, num_proc=self.n_threads, server= self.server,
+                                     lock=self.lock, verbose = self.verbose)
+                self.id_queue.task_done()
+                self.seq_out_queue.put(output)
+            return
 
-        def __call__(self, lock=None):
+    class FetchSeq(object):  # Todo: Split this up into smaller parts, cause this is too huge.
+        def __init__(self, id_rec):
+            self.id_rec = id_rec
 
+        def __call__(self, id_rec, passwd, id_type, driver, user, host, db, num_proc, verbose, lock=None):
+            #out_file = Path(output_name + '.' + output_type)
             import re
-            from Bio import SeqIO
-            from pathlib import Path
-
-            out_file = Path(output_name + '.' + output_type)
-
-            # Check to make sure list is not empty
-            if verbose and (not id_prelist or id_prelist is None):
-                print('id_prelist is empty!')
-
-            id_list = [str(item.split(delim)) for item in id_prelist]  # Breaks the tab sep in the lines into strings
-
+            if verbose > 1:
+                with lock:
+                    print('Full header for Entry:')
+                    print(id_rec)
+            id_list = [str(item.split(delim)) for item in id_rec]  # Breaks the tab sep in the lines into strings
             # Define the regex functions
             p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for gi
                  re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for accession
@@ -356,58 +342,16 @@ def fetchseqMP(ids, species, email='', source="psql", output_type="fasta", outpu
                     print(index + 1, ': ', ''.join(ID_item))
 
             # Armed with the ID list, we fetch the sequences from the appropriate source
-            if source.lower() == "entrez":  # Todo: Make sure this will actually output the correct sequence range...
-                if verbose:
-                    print('Source selected was Entrez. Beginning search now:')
-                from Bio import Entrez
-                from urllib.error import HTTPError
-                from time import sleep
-                Entrez.email = email
-                if verbose:
-                    print('Entrez email set as: ', email)
-                id_str = ",".join([i[2] for i in id_list_ids])
-                search_results = Entrez.read(Entrez.epost(db, id=id_str))
-                if verbose:
-                    print('EPost with IDs for database {} submitted to Entrez'.format(db))
-                webenv = search_results["WebEnv"]
-                query_key = search_results["QueryKey"]
-                with out_file.open("a+") as out_handle:
-                    if verbose:
-                        print('Opened outfile ', str(out_file.name))
-                        print('Commencing download:')
-                    for start in range(0, len(id_list_ids), batch_size):
-                        if verbose:
-                            print('Fetching sequences {0}-{1}'.format(start, start + batch_size))
-                        attempt = 0
-                        while attempt < 3:
-                            if verbose:
-                                print('Attempt #', str(attempt + 1))
-                            attempt += 1
-                            try:
-                                fetch_handle = Entrez.efetch(db=db, rettype="fasta", retmode="text", retstart=start,
-                                                             retmax=batch_size, webenv=webenv, query_key=query_key)
-                            except HTTPError as err:
-                                if 500 <= err.code <= 599:
-                                    print("Received error from server ", err)
-                                    print("Attempt {} of 3".format(attempt))
-                                    print('Will wait before next attempt...')
-                                    sleep(15)
-                                else:
-                                    print('could\'t get sequences, omitting', id_list[start:start + batch_size])
-                                    success_status = 0
-                                    continue
-                        data = fetch_handle.read()
-                        fetch_handle.close()
-                        out_handle.write(data)
-            elif source.lower() == "psql":
+            if source.lower() == "entrez":
+                raise Exception('Not yet implemented, sorry!!!')
+            elif source.lower() == "sql":
                 if verbose:
                     print('Searching for sequences in local PostgreSQL db...')
                 sub_db_name = ''.join([i[0:3] for i in species.title().split(' ')]) + version
                 id_list_search = [''.join(i[0:3]) for i in id_list_ids]
-                seqdict = biosql_getrecord(sub_db_name=sub_db_name, id_list=id_list_search, id_type=id_type,
-                                           passwd=passwd, driver="psycopg2", user="postgres", host="localhost",
-                                           db="bioseqdb",
-                                           parallel=parallel, verbose=verbose)
+                seqdict = biosql_get_record_mp(sub_db_name=sub_db_name, passwd=passwd, id_list=id_list_search,  # Todo: check the inheritence of all these things
+                                               id_type=id_type, driver=driver, user=user,
+                                               host=host, db=db, num_proc=n_threads, server=server, verbose=True)
                 itemsnotfound = [''.join(x) for x in id_list_ids if ''.join(x) not in seqdict.keys()]
                 if itemsnotfound:
                     if verbose:
@@ -551,8 +495,18 @@ def fetchseqMP(ids, species, email='', source="psql", output_type="fasta", outpu
                 with lock:
                     print('Received list!')
     else:
-        from Bio import SeqIO
-        ids = SeqIO.parse(str(ids), 'fasta')
+        if verbose > 1:
+            with lock:
+                print('Reading ID File... ', end='')
+        with ids.open('w') as in_handle:
+            id_prelist = [line.strip() for line in in_handle]  # list of each line in the file
+            print('Done!')
+        ids = list(filter(None, id_prelist))
+        if not id_prelist or id_prelist is None:
+            if verbose:
+                with lock:
+                    print('id_prelist is empty!')
+            return None
 
     if verbose > 1:
         if lock == None:
@@ -561,17 +515,21 @@ def fetchseqMP(ids, species, email='', source="psql", output_type="fasta", outpu
             with lock:
                 print('Readied ids!')
 
-    seq_list = multiprocessing.JoinableQueue()
+    id_list = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
 
-    fs_instances = [FetchSeqMP(seq_list, results, lock) for i in range(n_threads)]
+    server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
+
+    fs_instances = [FetchSeqMP(id_queue=id_list,seq_out_queue=results, species=species, email=email, source=source,
+                               output_type=output_type, output_name=output_name, db=db, version=version, delim=delim,
+                               id_type=id_type, batch_size=batch_size, server=server, passwd=passwd, verbose=verbose,
+                               lock=lock) for i in range(n_threads)]
     for fs in fs_instances:
         fs.start()
 
-    for seq in ids:
-        seq_list.put(FetchSeq(seq_id=seq, species=species, email=email, source=source, output_type=output_type,
-                              output_name=output_name, db=db, version=version, delim=delim, id_type=id_type,
-                              batch_size=batch_size, passwd=passwd, verbose=verbose))
+    for id_rec in ids:
+        if id_rec:
+            seq_list.put(FetchSeq(id_rec=id_rec))
     for i in range(n_threads):
         seq_list.put(None)
     output = list()
