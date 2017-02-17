@@ -178,9 +178,9 @@ def biosql_get_record_mp(sub_db_name, passwd, id_list=list(), id_type='accession
     return seqdict
 
 
-def fetchseqMP(id_file, species, email='', source="psql", output_type="fasta", output_name="outfile",
-               db="nucleotide", delim='\t', id_type='accession', batch_size=50, passwd='', version='1.0', verbose=True,
-               n_threads=2):
+def fetchseqMP(ids, species, email='', source="psql", output_type="fasta", output_name="outfile",
+               db="nucleotide", delim='\t', id_type='accession', batch_size=50, passwd='', version='1.0', verbose=1,
+               n_threads=2, lock=None):
     class FetchSeqMP(multiprocessing.Process):
         def __init__(self, id_queue, seq_out_queue, lock):
             multiprocessing.Process.__init__(self)
@@ -202,6 +202,7 @@ def fetchseqMP(id_file, species, email='', source="psql", output_type="fasta", o
     class FetchSeq(object):  # Todo: Split this up into smaller parts, cause this is too huge.
         def __init__(self, seq_id, species, email, source, output_type, output_name, db, version,
                      delim, id_type, batch_size, passwd, verbose):
+            self.seq_id = seq_id
             self.species = species
             self.email = email
             self.source = source
@@ -214,36 +215,27 @@ def fetchseqMP(id_file, species, email='', source="psql", output_type="fasta", o
             self.batch_size = batch_size
             self.passwd = passwd
 
+        def parse_id_header(self, seq_id):
+            if verbose:
+                print('Reading ID File...')
+            id_prelist = [line.strip() for line in infile_handle]  # list of each line in the file
+            id_prelist = list(filter(None, id_prelist))
+            if verbose:
+                print('Full header for Entry 1:')
+                try:
+                    print(id_prelist[0])
+                except IndexError:
+                    print('No items found!')
+                    raise
+
         def __call__(self, lock=None):
 
             import re
-            from os import strerror
-            from errno import ENOENT
             from Bio import SeqIO
             from pathlib import Path
 
             out_file = Path(output_name + '.' + output_type)
-            if verbose:
-                print("Loading ID File...")
-            if in_file.exists():
-                if verbose:
-                    print('ID File found successfully: ', str(in_file.absolute()))
-            else:
-                raise FileNotFoundError(ENOENT, strerror(ENOENT), str(in_file.name))
 
-            # Read ID file to compile lists:
-            with in_file.open('r') as infile_handle:
-                if verbose:
-                    print('Reading ID File...')
-                id_prelist = [line.strip() for line in infile_handle]  # list of each line in the file
-                id_prelist = list(filter(None, id_prelist))
-                if verbose:
-                    print('Full header for Entry 1:')
-                    try:
-                        print(id_prelist[0])
-                    except IndexError:
-                        print('No items found!')
-                        raise
             # Check to make sure list is not empty
             if verbose and (not id_prelist or id_prelist is None):
                 print('id_prelist is empty!')
@@ -543,6 +535,51 @@ def fetchseqMP(id_file, species, email='', source="psql", output_type="fasta", o
                 print('Done!')
             return success_status
 
+    from inspect import isgenerator
+    if isgenerator(ids):
+        if verbose > 1:
+            if lock == None:
+                print('Received generator!')
+            else:
+                with lock:
+                    print('Received generator!')
+    elif isinstance(ids, list):
+        if verbose > 1:
+            if lock == None:
+                print('Received list!')
+            else:
+                with lock:
+                    print('Received list!')
+    else:
+        from Bio import SeqIO
+        ids = SeqIO.parse(str(ids), 'fasta')
+
+    if verbose > 1:
+        if lock == None:
+            print('Readied ids!')
+        else:
+            with lock:
+                print('Readied ids!')
+
+    seq_list = multiprocessing.JoinableQueue()
+    results = multiprocessing.Queue()
+
+    fs_instances = [FetchSeqMP(seq_list, results, lock) for i in range(n_threads)]
+    for fs in fs_instances:
+        fs.start()
+
+    for seq in ids:
+        seq_list.put(FetchSeq(seq_id=seq, species=species, email=email, source=source, output_type=output_type,
+                              output_name=output_name, db=db, version=version, delim=delim, id_type=id_type,
+                              batch_size=batch_size, passwd=passwd, verbose=verbose))
+    for i in range(n_threads):
+        seq_list.put(None)
+    output = list()
+    while n_threads:
+        output.append(results.get())
+        n_threads -= 1
+    return output
+
 
 class RecBlastMP_Thread(multiprocessing.Process):
     """
@@ -610,7 +647,6 @@ class RecBlast(object):
         self.n_threads = n_threads
         # self.lock = lock
         # self.proc_id = proc_id
-
     def __call__(self, lock, proc_id):
         from pathlib import Path
         from Bio.Blast import NCBIXML
@@ -887,22 +923,4 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
     return recblast_out
 
 
-"""
-    pool = mp.Pool(n_threads)
 
-    #for seq_batch_gen in n_threads:
-    try:
-        pool.map_async(partial(recblast, target_species=target_species, fw_blast_db=fw_blast_db,
-                                   infile_type=infile_type, output_type=output_type, query_species=query_species,
-                                   blast_type=blast_type, localblast1=localblast1, localblast2=localblast2,
-                                   rv_blast_db=rv_blast_db, expect=expect, scoreperc=scoreperc,
-                                   perc_ident=perc_ident, perc_length=perc_length, megablast=megablast, email=email,
-                                   id_type=id_type, fw_source=fw_source, fw_id_db=fw_id_db, batch_size=batch_size,
-                                   passwd=passwd, fw_id_db_version=fw_id_db, verbose=verbose, parallel = True),
-                       seq_batch_gen)
-    except KeyboardInterrupt:
-        sys.stdout.write('\033[0m')
-        sys.stdout.write('User Interupt\n')
-    pool.close()
-    pool.join()
-"""
