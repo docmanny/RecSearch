@@ -21,6 +21,86 @@ def print(*objects, sep=' ', end='\n', file=sys.stdout, flush=False, lock=None):
 """
 
 
+class RecBlastContainer(dict):
+    def __init__(self, *args, **kwargs):
+        super(RecBlastContainer, self).__init__(*args, **kwargs)
+        for arg in args:
+            if isinstance(arg, dict):
+                for k, v in arg.items():
+                    if type(v) is dict:
+                        v = RecBlastContainer(v)
+                    else:
+                        pass
+                    self[k] = v
+
+        if kwargs:
+            for k, v in kwargs.items():
+                if k == 'proc_id':
+                    self.proc_id = v
+                elif k == 'seq_record':
+                    self.seq_record = v
+                if isinstance(v, dict):
+                    v = RecBlastContainer(v)
+                    self[k] = v
+                else:
+                    self[k] = v
+
+    def __getattr__(self, attr):
+        try:
+            self[attr]
+        except KeyError:
+            raise
+        except AssertionError:
+            raise
+        return self.get(attr)
+
+    def __setattr__(self, key, value):
+        self.__setitem__(key, value)
+
+    def __setitem__(self, key, value):
+        super(RecBlastContainer, self).__setitem__(key, value)
+        self.__dict__.update({key: value})
+
+    def __delattr__(self, item):
+        self.__delitem__(item)
+
+    def __delitem__(self, key):
+        super(RecBlastContainer, self).__delitem__(key)
+        del self.__dict__[key]
+
+    def __add__(self, other):
+        assert isinstance(other, RecBlastContainer), "Other is not a RecBlastContainer!"
+        try:
+            self.proc_id
+        except KeyError:
+            raise Exception('Attribute proc_id must be defined!!!')
+        try:
+            self.seq_record
+        except KeyError:
+            raise Exception('Attribute seq_record must be defined!!!')
+        if self.proc_id == other.proc_id:
+            return RecBlastContainer(proc_id=self.proc_id, seq_record={self.seq_record.name: self,
+                                                                       other.seq_record.name: other})
+        else:
+            return RecBlastContainer({str(self.proc_id): self, str(other.proc_id): other},
+                                     proc_id=[self.proc_id, other.proc_id])
+
+    def __str__(self, indent=''):
+        strobj = ''
+        if isinstance(self, dict):
+            for k, v in self.items():
+                strobj += ''.join([indent, 'Key "', str(k), '":', '\n'])
+                strobj += ''.join([indent, '\t', str(v).replace('\n', '\n\t{}'.format(indent)), '\n'])
+                if isinstance(v, dict):
+                    indent += '\t'
+                    strobj += (v, indent).__str__
+                else:
+                    continue
+        return strobj
+
+
+
+
 def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blast_type='blastn',
           local_blast=False, expect=0.005, megablast=True, blastoutput_custom="", perc_ident=75,
           verbose=True, n_threads=1, use_index=True, write=False, BLASTDB='/usr/db/blastdb/', **kwargs):
