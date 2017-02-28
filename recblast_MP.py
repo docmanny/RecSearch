@@ -1,14 +1,56 @@
-import os
-import sys
-
-lib_path = os.path.abspath(os.path.join('..', 'Misc'))
-sys.path.append(lib_path)
-
 import multiprocessing
 
 from BioSQL import BioSeqDatabase
 
-from Misc.misc_code import biosql_DBSeqRecord_to_SeqRecord, merge_ranges
+
+def merge_ranges(ranges):
+    """
+    Merge overlapping and adjacent ranges and yield the merged ranges in order.
+    The argument must be an iterable of pairs (start, stop).
+    (Source: Gareth Rees, StackExchange)
+
+    >>> list(merge_ranges([(5,7), (3,5), (-1,3)]))
+    [(-1, 7)]
+    >>> list(merge_ranges([(5,6), (3,4), (1,2)]))
+    [(1, 2), (3, 4), (5, 6)]
+    >>> list(merge_ranges([]))
+    []
+    """
+    ranges = iter(sorted(ranges))
+    try:
+        current_start, current_stop = next(ranges)
+    except StopIteration:  # ranges is empty
+        return
+    for start, stop in ranges:
+        if start > current_stop:
+            # Gap between segments: output current segment and start a new one.
+            yield current_start, current_stop
+            current_start, current_stop = start, stop
+        else:
+            # Segments adjacent or overlapping: merge.
+            current_stop = max(current_stop, stop)
+    yield current_start, current_stop
+
+
+def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
+    """
+    As I wrote this script I realized very quickly that there are a great many issues with DBSeqRecords throwing bugs
+    left and right, so I got tired of trying to debug a blackbox and instead decided to convert it to something that
+    works.
+    :param DBSeqRecord_:
+    :return:
+    """
+    from Bio.SeqRecord import SeqRecord
+    from Bio.Seq import Seq
+    if off:
+        return DBSeqRecord_
+    else:
+        return SeqRecord(seq=Seq(str(DBSeqRecord_.seq)), id=DBSeqRecord_.id, name=DBSeqRecord_.name,
+                         description=DBSeqRecord_.description, dbxrefs=DBSeqRecord_.dbxrefs,
+                         features=DBSeqRecord_.features, annotations=DBSeqRecord_.annotations,
+                         letter_annotations=DBSeqRecord_.letter_annotations)
+
+
 
 """
 def print(*objects, sep=' ', end='\n', file=sys.stdout, flush=False, lock=None):
@@ -27,6 +69,7 @@ class RecBlastContainer(dict):
         for arg in args:
             if isinstance(arg, dict):
                 for k, v in arg.items():
+                    k.replace('.', '_')
                     if type(v) is dict:
                         v = RecBlastContainer(v)
                     else:
@@ -35,7 +78,10 @@ class RecBlastContainer(dict):
 
         if kwargs:
             for k, v in kwargs.items():
+                k.replace('.', '_')
                 if k == 'proc_id':
+                    if isinstance(v, int):
+                        v = 'x' + str(v)
                     self.proc_id = v
                 elif k == 'seq_record':
                     self.seq_record = v
@@ -68,6 +114,13 @@ class RecBlastContainer(dict):
         super(RecBlastContainer, self).__delitem__(key)
         del self.__dict__[key]
 
+    def __getstate__(self):
+        return self
+
+    def __setstate__(self, state):
+        self.update(state)
+        self.__dict__ = self
+
     def __add__(self, other):
         assert isinstance(other, RecBlastContainer), "Other is not a RecBlastContainer!"
         try:
@@ -79,8 +132,8 @@ class RecBlastContainer(dict):
         except KeyError:
             raise Exception('Attribute seq_record must be defined!!!')
         if self.proc_id == other.proc_id:
-            return RecBlastContainer(proc_id=self.proc_id, seq_record={self.seq_record.name: self,
-                                                                       other.seq_record.name: other})
+            return RecBlastContainer({'proc_id': self.proc_id, self.seq_record.name.replace('.', '_'): self,
+                                      other.seq_record.name.replace('.', '_'): other})
         else:
             return RecBlastContainer({str(self.proc_id): self, str(other.proc_id): other},
                                      proc_id=[self.proc_id, other.proc_id])
@@ -89,16 +142,16 @@ class RecBlastContainer(dict):
         strobj = ''
         if isinstance(self, dict):
             for k, v in self.items():
-                strobj += ''.join([indent, 'Key "', str(k), '":', '\n'])
-                strobj += ''.join([indent, '\t', str(v).replace('\n', '\n\t{}'.format(indent)), '\n'])
+                if indent:
+                    strobj += ''.join([indent, '|---- Key "', str(k), '":', '\n'])
+                else:
+                    strobj += ''.join([indent, '| Key "', str(k), '":', '\n'])
                 if isinstance(v, dict):
                     indent += '\t'
-                    strobj += (v, indent).__str__
+                    strobj += v.__str__(indent)
                 else:
-                    continue
+                    strobj += ''.join(['\t', indent, '|---', str(v).replace('\n', '\n\t' + indent + '|--- '), '\n'])
         return strobj
-
-
 
 
 def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blast_type='blastn',
@@ -825,7 +878,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
                  query_species, blast_type, local_blast_1, local_blast_2, rv_blast_db, expect, perc_score,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
-                 write_intermediates, lock):
+                 write_intermediates):
         multiprocessing.Process.__init__(self)
         self.name = proc_id
         self.rb_queue = rb_queue
@@ -859,7 +912,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
         self.fw_blast_kwargs = fw_blast_kwargs
         self.rv_blast_kwargs = fw_blast_kwargs
         self.write_intermediates = write_intermediates
-        self.lock = lock
+        self.rc_container = RecBlastContainer(proc_id=self.name)
 
     def run(self):  # The meat of the script
         while True:
@@ -882,7 +935,8 @@ class RecBlastMP_Thread(multiprocessing.Process):
                                  host=self.host,
                                  user=self.user, driver=self.driver,
                                  fw_blast_kwargs=self.fw_blast_kwargs, rv_blast_kwargs=self.rv_blast_kwargs,
-                                 proc_id=self.name, write_intermediates=self.write_intermediates, lock=self.lock)
+                                 proc_id=self.name, write_intermediates=self.write_intermediates,
+                                 rc_container=self.rc_container)
             self.rb_queue.task_done()
             self.rb_results_queue.put(output)
         return
@@ -896,9 +950,15 @@ class RecBlast(object):
                  query_species, blast_type, local_blast_1, local_blast_2, rv_blast_db, expect, perc_score,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
-                 write_intermediates, lock, proc_id):
+                 write_intermediates, rc_container, proc_id):
+        # TODO: Replace lock with calls to a central print processes (ANOTHER TODO)!
+        # TODO: Replace ID sorting with a function that does it for you based on the now-working RecBlast!
+
         from pathlib import Path
         from Bio.Blast import NCBIXML
+        transtab = str.maketrans('!@#$%^&*();:.,\'\"/\\?<>|[]{}-=+', '_____________________________')
+        self.seq_record.name = self.seq_record.name.translate(transtab)
+        rc_container['seq_record'] = self.seq_record
         if verbose:
             with lock:
                 print('[Proc: {0}] [Seq.Name: {1}]'.format(proc_id, self.seq_record.name))
@@ -1180,15 +1240,14 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
                rv_blast_db='nt', expect=10, perc_score=0.5, perc_ident=50, perc_length=0.5, megablast=True, email='',
                id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50, passwd='',
                fw_id_db_version='1.0',
-               verbose='v', n_processes=10, n_threads=1, write_intermediates=False, fw_blast_kwargs=dict(),
-               rv_blast_kwargs=dict()):
+               verbose='v', n_processes=10, n_threads=1, write_intermediates=False, fw_blast_kwargs=dict,
+               rv_blast_kwargs=dict):
     import multiprocessing
     import logging
     from pathlib import Path
     from Bio import SeqIO
     from Bio import __version__ as bp_version
-
-    #TODO: Rather than using global_lock, have all threads output to a central record
+    # TODO: Make a process that acts as a central print server and use it to replace GlobalLock
     global_lock = multiprocessing.Lock()  # Stops threads from mixing output
     if isinstance(verbose, str):
         verbose = verbose.lower().count('v')
