@@ -1063,6 +1063,8 @@ class RecBlast(object):
                                       "unannotated_{0}_{1}.fasta".format(blast_type,
                                                                          self.seq_record.name
                                                                          ).replace(' ', '_'))
+        recblast_output = Path("{0}_recblast_out".format(target_species).replace(' ', '_') + '/' +
+                               "{0}_{1}.{2}".format(blast_type, self.seq_record.name, output_type).replace(' ', '_'))
         if write_intermediates:
             try:
                 forward_blast_output.absolute().parent.mkdir(parents=True)
@@ -1118,10 +1120,10 @@ class RecBlast(object):
         if verbose:
             print('Forward blast done!')
             print('Culling Results based on given criteria...')
-        f_id_out_list = ['{0}\t{1}\t{2}\n'.format(id_i[0], id_i[1], id_i[2]) for id_i in
-                         id_ranker(blastrecord, perc_score=perc_score, expect=expect, perc_length=perc_length,
+        f_id_ranked = id_ranker(blastrecord, perc_score=perc_score, expect=expect, perc_length=perc_length,
                                    verbose=verbose)
-                         ]
+        f_id_list = [(id_i[0], id_i[2]) for id_i in f_id_ranked]
+        f_id_out_list = ['{0}\t{1}\t{2}\n'.format(id_i[0], id_i[1], id_i[2]) for id_i in f_id_ranked]
         if write_intermediates:
             if verbose:
                 print('Writing Forward ID Hits to output!')
@@ -1212,7 +1214,13 @@ class RecBlast(object):
             entry_record.description += '|-|' + ''.join(reverse_blast_annotations)
             if verbose > 3:
                 print(entry_record)
-        return seq_dict
+        recblast_sequence = []
+        for item in f_id_ranked:
+            # Todo: find a more efficient way to do this:
+            for otherkey, otheritem in seq_dict.items:
+                if item[0] in otheritem.description:
+                    recblast_sequence.append(otheritem)
+        return recblast_output, recblast_sequence
         # def run(self):
 
 
@@ -1337,7 +1345,6 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
     for i in range(n_processes):
         rb_queue.put(None)
 
-    # Todo: figure out output.
     recblast_out = list()
     while n_processes:
         recblast_out.append(rb_results.get())
@@ -1345,4 +1352,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
     for rcb in rec_blast_instances:
         if rcb.is_alive():
             rcb.join()
+    for recblast_output, recblast_sequence in recblast_out:
+        with recblast_output.open('w') as rc_out:
+            SeqIO.write(recblast_sequence, rc_out, 'fasta')
     return recblast_out
