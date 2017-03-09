@@ -2,7 +2,7 @@ import multiprocessing
 from operator import itemgetter
 
 from Bio import SeqIO
-from Bio.Blast import Record as BioBlastRecord
+from Bio.Blast.Record import Blast as BioBlastRecord
 from BioSQL import BioSeqDatabase
 
 
@@ -493,7 +493,7 @@ def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='access
 
 class FetchSeqMP(multiprocessing.Process):
     def __init__(self, id_queue, seq_out_queue, missing_items_queue, delim, id_type, server, species, source, db,
-                 host, driver, version, user, passwd, email, output_type, batch_size, verbose, lock, n_subthreads):
+                 host, driver, version, user, passwd, email, output_type, batch_size, verbose, n_subthreads):
         multiprocessing.Process.__init__(self)
         # Queues
         self.id_queue = id_queue
@@ -519,7 +519,6 @@ class FetchSeqMP(multiprocessing.Process):
         # Function attributes
         self.output_type = output_type
         self.verbose = verbose
-        self.lock = lock
         self.n_subthreads = n_subthreads
 
     def run(self):  # runs FetSeq with everything EXCEPT the
@@ -532,8 +531,8 @@ class FetchSeqMP(multiprocessing.Process):
             seq_dict, miss_items = fs_instance(passwd=self.passwd, id_type=self.id_type, driver=self.driver,
                                                user=self.user, host=self.host, db=self.db, delim=self.delim,
                                                server=self.server, version=self.version,
-                                               species=self.species, source=self.source,
-                                               lock=self.lock, verbose=self.verbose, n_threads=self.n_subthreads)
+                                               species=self.species, source=self.source, verbose=self.verbose,
+                                               n_threads=self.n_subthreads)
             if self.verbose:
                 print('*****************************************1')
             self.id_queue.task_done()
@@ -553,13 +552,12 @@ class FetchSeq(object):  # The meat of the script
         self.id_rec = id_rec
 
     def __call__(self, delim, species, version, source, passwd, id_type, driver, user, host, db, n_threads, server,
-                 lock, verbose):
+                 verbose):
         # out_file = Path(output_name + '.' + output_type)
         import re
         if verbose > 1:
-            with lock:
-                print('Full header for Entry:')
-                print(self.id_rec)
+            print('Full header for Entry:')
+            print(self.id_rec)
         # id_list = [str(item.split(delim)) for item in self.id_rec]  # Breaks the tab sep in the lines into strings
         # Define the regex functions
         p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for gi
@@ -572,32 +570,26 @@ class FetchSeq(object):  # The meat of the script
 
         # Begin search:
         if verbose > 1:
-            with lock:
-                print('ID File Loaded, performing regex search for identifiers...')
-                print('ID Specified as: ', id_type)
+            print('ID File Loaded, performing regex search for identifiers...')
+            print('ID Specified as: ', id_type)
         if id_type == 'brute':
             if bool(p[1].findall(self.id_rec)):
                 id_type = 'accession'
                 if verbose > 1:
-                    with lock:
-                        print(p[1].findall(self.id_rec))
+                    print(p[1].findall(self.id_rec))
             elif bool(p[0].findall(self.id_rec)):
                 id_type = 'gi'
                 if verbose > 1:
-                    with lock:
-                        print(p[1].findall(self.id_rec))
+                    print(p[1].findall(self.id_rec))
             elif bool(p[2].findall(self.id_rec)):
                 id_type = 'id'
                 if verbose > 1:
-                    with lock:
-                        print(p[1].findall(self.id_rec))
+                    print(p[1].findall(self.id_rec))
             else:
                 raise Exception('Couldn\'t identify the id!')
             if verbose > 1:
-                with lock:
-                    print(
-                        'Brute Force was set, tested strings for all pre-registered IDs. ID was selected as type ',
-                        id_type)
+                print('Brute Force was set, tested strings for all pre-registered IDs. ID was selected as type ',
+                      id_type)
         if id_type == 'gi':
             if bool(p[0].findall(self.id_rec)):
                 found_id = True
@@ -674,10 +666,9 @@ class FetchSeq(object):  # The meat of the script
                     print('Sorry, still can\'t find it...')
         """
         if verbose > 1:
-            with lock:
-                print('ID list: ')
-                for index, ID_item in enumerate(id_list_ids):
-                    print(index + 1, ': ', ''.join(ID_item))
+            print('ID list: ')
+            for index, ID_item in enumerate(id_list_ids):
+                print(index + 1, ': ', ''.join(ID_item))
 
         # Armed with the ID list, we fetch the sequences from the appropriate source
         if source.lower() == "entrez":
@@ -699,30 +690,26 @@ class FetchSeq(object):  # The meat of the script
             itemsnotfound = [''.join(x) for x in id_list_ids if ''.join(x) not in seqdict.keys()]
             if itemsnotfound:
                 if verbose > 1:
-                    with lock:
-                        print('Some items were not found. List of items will be saved to the file '
-                              'items_not_found.output')
-                        for item in itemsnotfound:
-                            print(item)
-                            # with open(str(out_file.cwd()) + 'items_not_found.output', 'w') as missingitems:
-                            #     missingitems.writelines(itemsnotfound)
+                    print('Some items were not found. List of items will be saved to the file '
+                          'items_not_found.output')
+                    for item in itemsnotfound:
+                        print(item)
+                        # with open(str(out_file.cwd()) + 'items_not_found.output', 'w') as missingitems:
+                        #     missingitems.writelines(itemsnotfound)
             keys = [k for k in seqdict.keys()]
             if verbose > 1:
-                with lock:
-                    print("Sequence Dictionary keys:")
-                    print(keys)
+                print("Sequence Dictionary keys:")
+                print(keys)
             if bool(seq_range):
                 seqrange_ids = [ids for ids in seq_range.keys()]
                 if verbose > 1:
-                    with lock:
-                        print('Sequence Range IDs:')
-                        print(seqrange_ids)
+                    print('Sequence Range IDs:')
+                    print(seqrange_ids)
                 for k in keys:
                     if seqdict[k].id in seqrange_ids:
                         if verbose > 1:
-                            with lock:
-                                print('For sequence {}, found a sequence range!'.format(str(seqdict[k].id)))
-                                print('Full length of sequence: {}'.format(len(seqdict[k])))
+                            print('For sequence {}, found a sequence range!'.format(str(seqdict[k].id)))
+                            print('Full length of sequence: {}'.format(len(seqdict[k])))
                         if id_type == 'gi':
                             seq_description_full = p[0].findall(seqdict[k].description)[0]
                         elif id_type == 'accession':
@@ -750,9 +737,8 @@ class FetchSeq(object):  # The meat of the script
                     else:
                         seqdict[k] = seqdict[k][int(seq_range[k][0]):int(seq_range[k][1])]
                     if verbose > 1:
-                        with lock:
-                            print('Seq_description_full: ', seq_description_full)
-                            print('id_range: ', id_range[1:])
+                        print('Seq_description_full: ', seq_description_full)
+                        print('id_range: ', id_range[1:])
                     if int(seq_range[k][0]) > int(seq_range[k][1]):
                         seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + '(-)' + \
                                                  str(seq_description_full[3])
@@ -763,14 +749,12 @@ class FetchSeq(object):  # The meat of the script
                         print('Sequence Description: \n\t', seqdict[k].description)
                     seqdict[k].id += id_range
                     if verbose > 1:
-                        with lock:
-                            print('Sequence ID: \n\t', seqdict[k].id)
-                            if id_range:
-                                print('Length of subsequence with range {0}: {1}'.format(id_range, len(seqdict[k])))
+                        print('Sequence ID: \n\t', seqdict[k].id)
+                        if id_range:
+                            print('Length of subsequence with range {0}: {1}'.format(id_range, len(seqdict[k])))
             if verbose > 1:
-                with lock:
-                    print('Sequence Record post-processing, to be saved:')
-                    print(seqdict)
+                print('Sequence Record post-processing, to be saved:')
+                print(seqdict)
             if verbose > 1:
                 print('Finished getting sequence!')
             return seqdict, itemsnotfound
@@ -783,30 +767,25 @@ class FetchSeq(object):  # The meat of the script
             itemsnotfound = [x for x in id_list_ids if x not in seqdict.keys()]
             if itemsnotfound:
                 if verbose > 1:
-                    with lock:
-                        print(
-                            'Some items were not found. List of items will be saved to the file items_not_found.output')
-                        for item in itemsnotfound:
-                            print(item)
-                            # with open(str(out_file.cwd()) + 'items_not_found.output', 'w') as missingitems:
-                            #    missingitems.writelines(itemsnotfound)
+                    print('Some items were not found. List of items will be saved to the file items_not_found.output')
+                    for item in itemsnotfound:
+                        print(item)
+                        # with open(str(out_file.cwd()) + 'items_not_found.output', 'w') as missingitems:
+                        #    missingitems.writelines(itemsnotfound)
             keys = [k for k in seqdict.keys()]
             if verbose > 1:
-                with lock:
-                    print("Sequence Dictionary keys:")
-                    print(keys)
+                print("Sequence Dictionary keys:")
+                print(keys)
             if bool(seq_range):
                 seqrange_ids = [ids for ids in seq_range.keys()]
                 if verbose > 1:
-                    with lock:
-                        print('Sequence Range IDs:')
-                        print(seqrange_ids)
+                    print('Sequence Range IDs:')
+                    print(seqrange_ids)
                 for k in keys:
                     if seqdict[k].id in seqrange_ids:
                         if verbose > 1:
-                            with lock:
-                                print('For sequence {}, found a sequence range!'.format(str(seqdict[k].id)))
-                                print('\tFull length of sequence: {}'.format(len(seqdict[k])))
+                            print('For sequence {}, found a sequence range!'.format(str(seqdict[k].id)))
+                            print('\tFull length of sequence: {}'.format(len(seqdict[k])))
                         if id_type == 'gi':
                             seq_description_full = p[0].findall(seqdict[k].description)[0]
                         elif id_type == 'accession':
@@ -816,17 +795,15 @@ class FetchSeq(object):  # The meat of the script
                         else:
                             seq_description_full = p[4].findall(seqdict[k].description)[0]
                     if verbose > 1:
-                        with lock:
-                            print(int(seq_range[k][0]))
-                            print(int(seq_range[k][1]))
+                        print(int(seq_range[k][0]))
+                        print(int(seq_range[k][1]))
                     id_range = ':' + '-'.join(seq_range[k])
                     seqdict[k] = seqdict[k][int(seq_range[k][0]):int(seq_range[k][1])]
-                    seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + str(
-                        seq_description_full[3])
+                    seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + \
+                                             str(seq_description_full[3])
                     seqdict[k].id += id_range
                     if verbose > 1:
-                        with lock:
-                            print('\tLength of subsequence with range{0}: {1}'.format(id_range, len(seqdict[k])))
+                        print('\tLength of subsequence with range{0}: {1}'.format(id_range, len(seqdict[k])))
                     else:
                         if verbose > 1:
                             print('No sequence range found, continuing...')
@@ -836,49 +813,34 @@ class FetchSeq(object):  # The meat of the script
             return seqdict, itemsnotfound
             # SeqIO.write([seqdict[key] for key in seqdict.keys()], str(out_file), output_type)
         else:
-            with lock:
-                raise Exception('Not a valid database source!')
+            raise Exception('Not a valid database source!')
 
 
 def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='brute', server=None, source="SQL",
                db="bioseqdb", host='localhost', driver='psycopg2', version='1.0', user='postgres', passwd='', email='',
-               batch_size=50, output_type="fasta", verbose=1, lock=None, n_threads=2, n_subthreads=1):
+               batch_size=50, output_type="fasta", verbose=1, n_threads=2, n_subthreads=1):
 
     from inspect import isgenerator
     if isgenerator(ids):
         if verbose > 1:
-            if lock is None:
-                print('Received generator!')
-            else:
-                with lock:
-                    print('Received generator!')
+            print('Received generator!')
     elif isinstance(ids, list):
         if verbose > 1:
-            if lock is None:
-                print('Received list!')
-            else:
-                with lock:
-                    print('Received list!')
+            print('Received list!')
     else:
         if verbose > 1:
-            with lock:
-                print('Reading ID File... ')
+            print('Reading ID File... ')
         with ids.open('w') as in_handle:
             id_prelist = [line.strip() for line in in_handle]  # list of each line in the file
             print('Done!')
         ids = list(filter(None, id_prelist))
         if not id_prelist or id_prelist is None:
             if verbose:
-                with lock:
-                    print('id_prelist is empty!')
+                print('id_prelist is empty!')
             return None
 
     if verbose > 1:
-        if lock is None:
-            print('Readied ids!')
-        else:
-            with lock:
-                print('Readied ids!')
+        print('Readied ids!')
 
     id_list = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
@@ -906,7 +868,7 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
     fs_instances = [FetchSeqMP(id_queue=id_list, seq_out_queue=results, missing_items_queue=miss_items_queue,
                                delim=delim, id_type=id_type, server=server, species=species, source=source, db=db,
                                host=host, driver=driver, version=version, user=user, passwd=passwd, email=email,
-                               output_type=output_type, batch_size=batch_size, verbose=verbose, lock=lock,
+                               output_type=output_type, batch_size=batch_size, verbose=verbose,
                                n_subthreads=n_subthreads)
                     for i in range(n_threads)]
     if verbose > 1:
@@ -1101,12 +1063,23 @@ class RecBlast(object):
         else:
             if verbose:
                 print("\tPerforming forward BLAST for {}... ".format(self.seq_record.name))
-            fwblasthandle, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
-                                             database=fw_blast_db, query_species=query_species, filetype=infile_type,
-                                             blast_type=blast_type, local_blast=local_blast_1, expect=expect,
-                                             megablast=megablast, blastoutput_custom=str(forward_blast_output),
-                                             perc_ident=perc_ident, verbose=verbose, write=write_intermediates,
-                                             **fw_blast_kwargs)
+            if fw_blast_kwargs:
+                if verbose:
+                    print(fw_blast_kwargs)
+                fwblasthandle, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
+                                                 database=fw_blast_db, query_species=query_species,
+                                                 filetype=infile_type,
+                                                 blast_type=blast_type, local_blast=local_blast_1, expect=expect,
+                                                 megablast=megablast, blastoutput_custom=str(forward_blast_output),
+                                                 perc_ident=perc_ident, verbose=verbose, write=write_intermediates,
+                                                 **fw_blast_kwargs)
+            else:
+                fwblasthandle, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
+                                                 database=fw_blast_db, query_species=query_species,
+                                                 filetype=infile_type,
+                                                 blast_type=blast_type, local_blast=local_blast_1, expect=expect,
+                                                 megablast=megablast, blastoutput_custom=str(forward_blast_output),
+                                                 perc_ident=perc_ident, verbose=verbose, write=write_intermediates)
             if local_blast_1:
                 if write_intermediates:
                     with forward_blast_output.open() as fin:
@@ -1182,13 +1155,23 @@ class RecBlast(object):
                     print('Not performing reverse blast!')
                 continue
             else:
-                rvblasthandle, blast_err = blast(seq_record=entry_record, target_species=target_species,
-                                                 database=rv_blast_db, query_species=query_species,
-                                                 filetype=infile_type,
-                                                 blast_type=blast_type, local_blast=local_blast_2, expect=expect,
-                                                 megablast=megablast, blastoutput_custom=str(reverse_blast_output),
-                                                 perc_ident=perc_ident, verbose=verbose, write=write_intermediates,
-                                                 **rv_blast_kwargs)
+                if rv_blast_kwargs:
+                    if verbose:
+                        print(rv_blast_kwargs)
+                    rvblasthandle, blast_err = blast(seq_record=entry_record, target_species=target_species,
+                                                     database=rv_blast_db, query_species=query_species,
+                                                     filetype=infile_type,
+                                                     blast_type=blast_type, local_blast=local_blast_2, expect=expect,
+                                                     megablast=megablast, blastoutput_custom=str(reverse_blast_output),
+                                                     perc_ident=perc_ident, verbose=verbose, write=write_intermediates,
+                                                     **rv_blast_kwargs)
+                else:
+                    rvblasthandle, blast_err = blast(seq_record=entry_record, target_species=target_species,
+                                                     database=rv_blast_db, query_species=query_species,
+                                                     filetype=infile_type,
+                                                     blast_type=blast_type, local_blast=local_blast_2, expect=expect,
+                                                     megablast=megablast, blastoutput_custom=str(reverse_blast_output),
+                                                     perc_ident=perc_ident, verbose=verbose, write=write_intermediates)
             if local_blast_1:
                 if write_intermediates:
                     with reverse_blast_output.open() as fin:
@@ -1217,7 +1200,7 @@ class RecBlast(object):
         recblast_sequence = []
         for item in f_id_ranked:
             # Todo: find a more efficient way to do this:
-            for otherkey, otheritem in seq_dict.items:
+            for otherkey, otheritem in seq_dict.items():
                 if item[0] in otheritem.description:
                     recblast_sequence.append(otheritem)
         return recblast_output, recblast_sequence
@@ -1252,8 +1235,43 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
                rv_blast_db='nt', expect=10, perc_score=0.5, perc_ident=50, perc_length=0.5, megablast=True, email='',
                id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50, passwd='',
                fw_id_db_version='1.0',
-               verbose='v', n_processes=10, n_threads=1, write_intermediates=False, fw_blast_kwargs=dict,
-               rv_blast_kwargs=dict):
+               verbose='v', n_processes=10, n_threads=1, write_intermediates=False, write_final=True,
+               fw_blast_kwargs=None, rv_blast_kwargs=None):
+    """
+
+    :param seqfile:
+    :param target_species:
+    :param fw_blast_db:
+    :param infile_type:
+    :param output_type:
+    :param host:
+    :param user:
+    :param driver:
+    :param query_species:
+    :param blast_type:
+    :param local_blast_1:
+    :param local_blast_2:
+    :param rv_blast_db:
+    :param expect:
+    :param perc_score:
+    :param perc_ident:
+    :param perc_length:
+    :param megablast:
+    :param email:
+    :param id_type:
+    :param fw_source:
+    :param fw_id_db:
+    :param fetch_batch_size:
+    :param passwd:
+    :param fw_id_db_version:
+    :param verbose:
+    :param n_processes:
+    :param n_threads:
+    :param write_intermediates:
+    :param fw_blast_kwargs:
+    :param rv_blast_kwargs:
+    :return:
+    """
     import multiprocessing
     import logging
     from pathlib import Path
@@ -1346,13 +1364,13 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
         rb_queue.put(None)
 
     recblast_out = list()
-    while n_processes:
+    for i in range(n_processes):
         recblast_out.append(rb_results.get())
-        n_processes -= 1
     for rcb in rec_blast_instances:
         if rcb.is_alive():
             rcb.join()
-    for recblast_output, recblast_sequence in recblast_out:
-        with recblast_output.open('w') as rc_out:
-            SeqIO.write(recblast_sequence, rc_out, 'fasta')
+    if write_final:
+        for recblast_output, recblast_sequence in recblast_out:
+            with recblast_output.open('w') as rc_out:
+                SeqIO.write(recblast_sequence, rc_out, 'fasta')
     return recblast_out
