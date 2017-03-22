@@ -1451,13 +1451,10 @@ class RecBlast(object):
 
 
 class SearchMaster(multiprocessing.Process):
-    # TODO: Figure out a way for this process to communicate independently with various process
     # TODO: Configure this to search using either BLAST or BLAT
     # TODO: Use SearchIO to have this read results
-    def __init__(self, search_queue, result_queue, search_type='blast'):
+    def __init__(self, search_type='blast'):
         multiprocessing.Process.__init__(self)
-        self.search_queue = search_queue
-        self.result_queue = result_queue
         self.search_type = search_type
 
     def run(self):  # The meat of the script
@@ -1472,6 +1469,14 @@ class SearchMaster(multiprocessing.Process):
         return
 
 
+class SearchInstance(object):
+    def __init__(self):
+        pass
+
+    def __call__(self):
+        return
+
+
 def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='fasta', output_type='fasta',
                host='localhost', user='postgres', driver='psycopg2',
                query_species='Homo sapiens', blast_type='blastn', local_blast_1=False, local_blast_2=False,
@@ -1480,7 +1485,43 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
                fw_id_db_version='auto', BLASTDB='/usr/db/blastdb',
                verbose='v', max_n_processes=20, n_threads=1, write_intermediates=False, write_final=True,
                fw_blast_kwargs=None, rv_blast_kwargs=None):
+    """
 
+    :param seqfile:
+    :param target_species:
+    :param fw_blast_db:
+    :param infile_type:
+    :param output_type:
+    :param host:
+    :param user:
+    :param driver:
+    :param query_species:
+    :param blast_type:
+    :param local_blast_1:
+    :param local_blast_2:
+    :param rv_blast_db:
+    :param expect:
+    :param perc_score:
+    :param perc_ident:
+    :param perc_length:
+    :param megablast:
+    :param email:
+    :param id_type:
+    :param fw_source:
+    :param fw_id_db:
+    :param fetch_batch_size:
+    :param passwd:
+    :param fw_id_db_version:
+    :param BLASTDB:
+    :param verbose:
+    :param max_n_processes:
+    :param n_threads:
+    :param write_intermediates:
+    :param write_final:
+    :param fw_blast_kwargs:
+    :param rv_blast_kwargs:
+    :return:
+    """
     if isinstance(verbose, str):
         verbose = verbose.lower().count('v')
     elif isinstance(verbose, int) and verbose > 0:
@@ -1530,13 +1571,28 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
     # Check Seqfile to make sure its real
     if verbose >= 1:
         print('Loading SeqFile records... ')
-    seqfile_path = Path(seqfile)
+    seqfile_path = ''
+    if isinstance(seqfile, str):
+        seqfile_path = Path(seqfile)
+    elif isinstance(seqfile, Path):
+        seqfile_path = seqfile
+
+    # Loads rec_handle when seqfile_path is defined:
     try:
-        rec_handle = [i for i in SeqIO.parse(str(seqfile_path.absolute()), output_type)]
-        if verbose >= 1:
-            print('Done!')
+        if seqfile_path == '':
+            if isinstance(seqfile, dict):
+                rec_handle = list()
+                for key, item in seqfile.items():
+                    rec_handle.append(item)
+            else:
+                rec_handle = list(seqfile)
+        else:
+            rec_handle = [i for i in SeqIO.parse(str(seqfile_path.absolute()), output_type)]
     except FileNotFoundError:
         raise
+    else:
+        if verbose >= 1:
+            print('Done!')
 
     if verbose > 1:
         print('Automatically calculating n_processes:')
@@ -1577,7 +1633,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
         if target_species.lower() == 'all':
             if verbose:
                 print('Target species set to all. Searching server for all available species:')
-            target_species = biosql_get_sub_db_names(passwd=passwd, db=fw_blast_db, driver=driver, user=user, host=host)
+            target_species = biosql_get_sub_db_names(passwd=passwd, db=fw_id_db, driver=driver, user=user, host=host)
             if verbose:
                 print(target_species)
     if isinstance(target_species, list):
@@ -1640,8 +1696,9 @@ def recblast_write(rc_container, verbose=True):
                             SeqIO.write(recblast_sequence, rc_out, 'fasta')
 
 
-def cleanup_fasta_input(handle):
-    oldlist = [i for i in SeqIO.parse('/home/manny/Seq/cullins_uchl3_tp53_clean.fasta', 'fasta')]
+def cleanup_fasta_input(handle, filetype='fasta', write=True):
+    from Bio import SeqIO
+    oldlist = [i for i in SeqIO.parse(handle, filetype)]
     names = set([i.name for i in oldlist])
     newlist = list()
     for name in names:
@@ -1649,6 +1706,9 @@ def cleanup_fasta_input(handle):
         for j in x:
             j.name += '_' + str(j.description).split('|')[2]
             newlist += x
+    if write:
+        with open(handle + '.clean', 'w') as outf:
+            SeqIO.write(newlist, outf, filetype)
     return newlist
 
 
