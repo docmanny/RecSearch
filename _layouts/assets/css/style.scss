@@ -1,0 +1,71 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+#resize {
+  float: left;
+  padding: 10px;
+  max-width: 50%;
+  max-height: 50%;
+}
+
+#menu-bar {
+  ul.topnav {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #333;
+    text-align: center;
+  }
+
+  /* Float the list items side by side */
+  ul.topnav li {
+    display: inline-block;
+  }
+
+  /* Style the links inside the list items */
+  ul.topnav li a, .dropbtn {
+    display: inline-block;
+    color: #f2f2f2;
+    text-align: center;
+    padding: 14px 16px;
+    text-decoration: none;
+    transition: 0.3s;
+    font-size: 17px;
+  }
+
+  ul.topnav li a:hover, .dropdown:hover, .dropbtn:hover {
+    background-color: #555;
+  }
+  ul.topnav li.dropdown {
+    display: inline-block;
+  }
+  ul.topnav .dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: #f9f9f9;
+    min-width: 160px;
+    box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
+    z-index: 1;
+  }
+  ul.topnav .dropdown-content a {
+    color: black;
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+    text-align: center;
+  }
+  ul.topnav .dropdown-content a:hover {
+    background-color: #555;
+    color: white;
+  }
+  ul.topnav .dropdown:hover .dropdown-content {
+    display: block;
+  }
+  /* Hide the list item that contains the link that should open and close the topnav on small screens*/
+  ul.topnav li.icon {
+    display: none;
+  }
+}

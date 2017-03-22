@@ -1,0 +1,6 @@
+theme: jekyll-theme-slate
+
+title: RecBlast
+description: A Python module containing functions to perform Reciprocal-Best-Hit BLAST searches between species.
+
+google_analytics: UA-93059474-1

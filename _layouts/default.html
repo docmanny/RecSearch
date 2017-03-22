@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="viewport" content="width=device-width,maximum-scale=2">
+    <meta name="description" content="{{ site.title | default:
+site.github.repository_name }} : {{ site.description | default:
+site.github.project_tagline }}">
+    {% if page.url == "/404.html" %}
+    <meta http-equiv="refresh" content="5; url=/">
+    {% endif %}
+    <link rel="stylesheet" type="text/css" media="screen" href="{{
+'/assets/css/style.css?v=' | append: site.github.build_revision |
+relative_url }}">
+    {% if site.google_analytics and jekyll.environment == 'production' %}
+    {% include analytics.html %}
+    {% endif %}
+    <title>{{ site.title | default: site.github.repository_name
+        }}</title>
+</head>
+
+<body>
+
+<!-- HEADER -->
+<div id="header_wrap" class="outer">
+    <header class="inner">
+        <h1 id="project_title">{{ site.title | default:
+            site.github.repository_name }}</h1>
+        <h2 id="project_tagline">{{ site.description | default:
+            site.github.project_tagline }}</h2>
+        <section id="menu-bar">
+            <ul class="topnav">
+                <li><a href="/index.html">Home</a></li>
+                <li class='dropdown'>
+                    <a href="https://www.github.com/docmanny" class="dropbtn">GitHub Projects</a>
+                    <div class="dropdown-content">
+                        <a href="https://github.com/docmanny/Miscellaneous-Code">Miscellaneous Code</a>
+                        <a href="https://github.com/docmanny/RecBlast">RecBlast</a>
+                    </div>
+                </li>
+                <li><a href="/contact.html">Contact</a></li>
+                <li><a href="https://www.orcid.org/0000-0001-8341-2390">ORCID</a></li>
+                <li class="icon">
+                    <a href="javascript:void(0);" onclick="myFunction()">&#9776;</a>
+                </li>
+            </ul>
+        </section>
+    </header>
+</div>
+
+<!-- MAIN CONTENT -->
+<div id="main_content_wrap" class="outer">
+    <section id="main_content" class="inner">
+        {{ content }}
+    </section>
+</div>
+
+<!-- FOOTER  -->
+<div id="footer_wrap" class="outer">
+    <footer class="inner">
+        {% if site.github.is_project_page %}
+        <p class="copyright">{{ site.title | default:
+            site.github.repository_name }} maintained by <a href="{{
+site.github.owner_url }}">{{ site.github.owner_name }}</a></p>
+        {% endif %}
+        <p>Published with <a href="https://pages.github.com">GitHub
+            Pages</a></p>
+    </footer>
+</div>
+
+
+</body>
+</html>
