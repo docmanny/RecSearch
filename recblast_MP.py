@@ -3,6 +3,7 @@ import multiprocessing
 import re
 import sys
 from inspect import isgenerator
+from io import StringIO
 from operator import itemgetter
 from pathlib import Path
 from time import sleep
@@ -50,6 +51,81 @@ class ProgressBar(object):
         self.current = self.total
         self()
         print('', file=self.output)
+
+
+def nuc_to_prot_compare(prot_sub, nuc_query, perc_ident, perc_length, trans_table=1, verbose=True):
+    from Bio.SeqRecord import SeqRecord
+    from Bio import AlignIO
+    from Bio.Align.Applications import MuscleCommandline
+    tnuc_list = []
+    for strand, nuc in [(+1, nuc_query), (-1, nuc_query.reverse_complement())]:
+        for frame in range(3):
+            tnuc_list += [SeqRecord(seq=p, id='{0}-({1})-{2}.{3}'.format(nuc_query.id, strand, frame + 1, n),
+                                    description="Translation of {0} ORF#{1} in frame {2} on {3} strand. Original Description:".format(
+                                        nuc_query.id, n, frame + 1, strand) + nuc_query.description
+                                    ) for n, p in enumerate(nuc[frame:].seq.translate().split("*")) if
+                          len(p) >= (len(prot_sub) * perc_length)]
+    temp_fasta = StringIO()
+    SeqIO.write([prot_sub] + tnuc_list, temp_fasta, 'fasta')
+    muscle_cline = MuscleCommandline()
+    stdout, stderr = muscle_cline(stdin=temp_fasta.getvalue())
+    align = AlignIO.read(StringIO(stdout), "fasta")
+    for record in align:
+        print("%s - %s" % (str(record.seq), record.id))
+    return align
+
+
+def find_prot_in_nucl(prot_sub, nuc_query):
+    # Note: this is a total hack but if it works its not (fully) stupid
+    for strand, nuc in [(+1, nuc_query), (-1, nuc_query.reverse_complement())]:
+        for frame in range(3):
+            orf = nuc[frame:]
+            orf_start = False
+            exon_start = False
+            counter = 0
+            for codon in (orf[i:i + 3].seq for i in range(0, len(orf), 3)):
+                if str(codon.translate()) == str(prot_sub[counter]):
+                    exon_start = True
+
+                if codon == 'ATG':
+                    tnuc = ''
+                else:
+                    if orf_start:
+                        if exon_start:
+                            pass
+                        else:
+
+                    else:
+                        continue
+
+
+def merge_ranges(ranges):
+    """
+    Merge overlapping and adjacent ranges and yield the merged ranges in order.
+    The argument must be an iterable of pairs (start, stop).
+    (Source: Gareth Rees, StackExchange)
+
+    >>> list(merge_ranges([(5,7), (3,5), (-1,3)]))
+    [(-1, 7)]
+    >>> list(merge_ranges([(5,6), (3,4), (1,2)]))
+    [(1, 2), (3, 4), (5, 6)]
+    >>> list(merge_ranges([]))
+    []
+    """
+    ranges = iter(sorted(ranges))
+    try:
+        current_start, current_stop = next(ranges)
+    except StopIteration:  # ranges is empty
+        return
+    for start, stop in ranges:
+        if start > current_stop:
+            # Gap between segments: output current segment and start a new one.
+            yield current_start, current_stop
+            current_start, current_stop = start, stop
+        else:
+            # Segments adjacent or overlapping: merge.
+            current_stop = max(current_stop, stop)
+    yield current_start, current_stop
 
 
 def id_ranker(blastrecord, perc_score, expect, perc_length, hsp_cumu_score=True, align_scorelist=list(),
@@ -132,35 +208,6 @@ def id_ranker(blastrecord, perc_score, expect, perc_length, hsp_cumu_score=True,
     return id_list
 
 
-def merge_ranges(ranges):
-    """
-    Merge overlapping and adjacent ranges and yield the merged ranges in order.
-    The argument must be an iterable of pairs (start, stop).
-    (Source: Gareth Rees, StackExchange)
-
-    >>> list(merge_ranges([(5,7), (3,5), (-1,3)]))
-    [(-1, 7)]
-    >>> list(merge_ranges([(5,6), (3,4), (1,2)]))
-    [(1, 2), (3, 4), (5, 6)]
-    >>> list(merge_ranges([]))
-    []
-    """
-    ranges = iter(sorted(ranges))
-    try:
-        current_start, current_stop = next(ranges)
-    except StopIteration:  # ranges is empty
-        return
-    for start, stop in ranges:
-        if start > current_stop:
-            # Gap between segments: output current segment and start a new one.
-            yield current_start, current_stop
-            current_start, current_stop = start, stop
-        else:
-            # Segments adjacent or overlapping: merge.
-            current_stop = max(current_stop, stop)
-    yield current_start, current_stop
-
-
 def biosql_get_sub_db_names(passwd, db="bioseqdb", driver="psycopg2", user="postgres", host="localhost"):
     from BioSQL import BioSeqDatabase
     server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
@@ -185,39 +232,6 @@ def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
                          description=DBSeqRecord_.description, dbxrefs=DBSeqRecord_.dbxrefs,
                          features=DBSeqRecord_.features, annotations=DBSeqRecord_.annotations,
                          letter_annotations=DBSeqRecord_.letter_annotations)
-
-
-"""
-class PrintServer(multiprocessing.Process):
-    def __init__(self, task_queue):
-        multiprocessing.Process.__init__(self)
-        self.task_queue = task_queue
-
-    def run(self):
-        proc_name = self.name
-        while True:
-            next_print = self.task_queue.get()
-            if next_task is None:
-                self.task_queue.task_done()
-                break
-            answer = next_task(connection=self.pyConn)
-            self.task_queue.task_done()
-            self.result_queue.put(answer)
-        return
-class PrintTask(object):
-    def __init__(self, *objects, sep=' ', end='\n', file=sys.stdout, flush=False):
-        self.objects = objects
-        self.sep = sep
-        self.end = end
-        self.file = file
-        self.flush = flush
-    def __call__(self):
-        import builtins
-        builtins.print(*self.objects, sep=self.sep, end=self.end, file=self.file, flush=self.flush)
-
-def print(printqueue, *args, **kwargs):
-    printqueue.put(PrintTask, *args, **kwargs)
-"""
 
 
 class RecBlastContainer(dict):
@@ -275,6 +289,7 @@ class RecBlastContainer(dict):
         self.update(state)
         self.__dict__ = self
 
+    """
     def __str__(self, indent=''):
         super(RecBlastContainer, self).__str__()
         strobj = ''
@@ -290,13 +305,13 @@ class RecBlastContainer(dict):
                 else:
                     strobj += ''.join(['\t', indent, '|---', str(v).replace('\n', '\n\t' + indent + '|--- '), '\n'])
         return strobj
-
+    """
 
 def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blast_type='blastn',
-          local_blast=False, expect=0.005, megablast=True, blastoutput_custom="", perc_ident=75,
-          verbose=True, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', **kwargs):
+          local_blast=False, expect=0.005, megablast=True, use_index=False, blastoutput_custom="", perc_ident=75,
+          verbose=True, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', search_strategy='auto', **blast_kwargs):
     from pathlib import Path
-    
+
     from Bio.Blast import NCBIWWW
     if isinstance(seq_record, SeqIO.SeqRecord):
         pass
@@ -305,29 +320,18 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
     args = dict()
     if verbose:
         print("Now starting BLAST...")
-    if kwargs:
-        args.update(**kwargs)
-    # Begin by opening recblast_out, and then start with the primary BLAST
-    if blastoutput_custom == '':
-        blastoutput_custom = Path("{0}_blast".format(target_species),
-                                  "{0}_{1}_{2}_to_{3}.xml".format(blast_type, seq_record.name,
-                                                                  query_species, target_species)).absolute()
-    else:
-        blastoutput_custom = Path(blastoutput_custom).absolute()
-    try:
-        blastoutput_custom.parent.mkdir(parents=True)
-    except FileExistsError:
-        pass
 
     if local_blast:
         import subprocess
+        # build up the BLAST arguments:
         args.update({'-db': database, '-evalue': expect,
                      '-outfmt': '5',
                      '-num_threads': n_threads})
         if blast_type == 'blastn':
             if megablast:
                 args['-task'] = 'megablast'
-            # args['-use_index'] = use_index
+            if use_index:
+                args['-use_index'] = use_index
             args['-perc_identity'] = perc_ident
         args_expanded = list()
         [(args_expanded.append(j), args_expanded.append(k)) for j, k in args.items()]
@@ -359,6 +363,8 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
                          entrez_query='"{}"[ORGN]'.format(target_species), expect=expect, perc_ident=perc_ident))
         if megablast & (blast_type == 'blastn'):
             args['megablast'] = True
+        if blast_kwargs:
+            args.update(blast_kwargs)
         if verbose:
             print('Submitting Remote BLAST! Options passed:')
             for k, v in args.items():
@@ -369,6 +375,16 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
     if verbose:
         print('Done with Blast!')
     if write:
+        if blastoutput_custom == '':
+            blastoutput_custom = Path("{0}_blast".format(target_species),
+                                      "{0}_{1}_{2}_to_{3}.xml".format(blast_type, seq_record.name,
+                                                                      query_species, target_species)).absolute()
+        else:
+            blastoutput_custom = Path(blastoutput_custom).absolute()
+        try:
+            blastoutput_custom.parent.mkdir(parents=True)
+        except FileExistsError:
+            pass
         with blastoutput_custom.open("w") as fxml:
             fxml.write(blast_result)
     else:
@@ -529,19 +545,19 @@ class BioSeqLookupCascade(object):
 def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='accession', driver="psycopg2",
                          user="postgres", host="localhost", db="bioseqdb", num_proc=2, verbose=True, server=None):
     """
-    
-    :param sub_db_name: 
-    :param passwd: 
-    :param id_list: 
-    :param id_type: 
-    :param driver: 
-    :param user: 
-    :param host: 
-    :param db: 
-    :param num_proc: 
-    :param verbose: 
-    :param server: 
-    :return: 
+
+    :param sub_db_name:
+    :param passwd:
+    :param id_list:
+    :param id_type:
+    :param driver:
+    :param user:
+    :param host:
+    :param db:
+    :param num_proc:
+    :param verbose:
+    :param server:
+    :return:
     if __name__ == '__main__':
         biosql_get_record_mp(sub_db_name='MyoLuc2.0', passwd='',
                              id_list=['NW_005871148', 'NW_005871300', 'NW_005871148'], id_type='accession',
@@ -583,13 +599,13 @@ def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='access
 
 
 def id_search(id_rec, id_type='brute', verbose=True):
-    # id_list = [str(item.split(delim)) for item in self.id_rec]  # Breaks the tab sep in the lines into strings
     # Define the regex functions
     p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for gi
          re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for accession
          re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for generic ID
          re.compile(':(\d+)-(\d+)'),  # regex for sequence range
          ]
+
     id_list_ids = []  # Initialized list of IDs
     seq_range = {}  # Initialized dict of sequence ranges
 
@@ -1012,7 +1028,8 @@ class RecBlastMP_Thread(multiprocessing.Process):
     """
 
     def __init__(self, proc_id, rb_queue, rb_results_queue, fw_blast_db, infile_type, output_type, BLASTDB,
-                 query_species, blast_type, local_blast_1, local_blast_2, rv_blast_db, expect, perc_score,
+                 query_species, blast_type_1, blast_type_2, local_blast_1, local_blast_2, rv_blast_db, expect,
+                 perc_score,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
                  write_intermediates):
@@ -1024,7 +1041,8 @@ class RecBlastMP_Thread(multiprocessing.Process):
         self.infile_type = infile_type
         self.output_type = output_type
         self.query_species = query_species
-        self.blast_type = blast_type
+        self.blast_type_1 = blast_type_1
+        self.blast_type_2 = blast_type_2
         self.local_blast_1 = local_blast_1
         self.local_blast_2 = local_blast_2
         self.rv_blast_db = rv_blast_db
@@ -1064,7 +1082,8 @@ class RecBlastMP_Thread(multiprocessing.Process):
                 output = rb_instance(fw_blast_db=self.fw_blast_db, BLASTDB=self.BLASTDB,
                                      infile_type=self.infile_type, output_type=self.output_type,
                                      query_species=self.query_species,
-                                     blast_type=self.blast_type, local_blast_1=self.local_blast_1,
+                                     blast_type_1=self.blast_type_1, blast_type_2=self.blast_type_2,
+                                     local_blast_1=self.local_blast_1,
                                      local_blast_2=self.local_blast_2,
                                      rv_blast_db=self.rv_blast_db, expect=self.expect, perc_score=self.perc_score,
                                      perc_ident=self.perc_ident,
@@ -1098,7 +1117,8 @@ class RecBlast(object):
         self.target_species = target_species
 
     def __call__(self, fw_blast_db, infile_type, output_type, BLASTDB,
-                 query_species, blast_type, local_blast_1, local_blast_2, rv_blast_db, expect, perc_score,
+                 query_species, blast_type_1, blast_type_2, local_blast_1, local_blast_2, rv_blast_db, expect,
+                 perc_score,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
                  write_intermediates, proc_id):
@@ -1122,37 +1142,37 @@ class RecBlast(object):
         output_paths = rc_container['output_paths']
         output_paths.update(
             forward_blast_output=Path("{0}_recblast_out".format(target_species).replace(' ', '_') + '/' +
-                                      "{0}_{1}_tmp".format(blast_type,
+                                      "{0}_{1}_tmp".format(blast_type_1,
                                                            self.seq_record.name
                                                            ).replace(' ', '_') + '/' +
-                                      "{0}_{1}_{2}_to_{3}.xml".format(blast_type,
+                                      "{0}_{1}_{2}_to_{3}.xml".format(blast_type_1,
                                                                       self.seq_record.name,
                                                                       query_species,
                                                                       target_species
                                                                       ).replace(' ', '_')),
             forward_id_score_output=Path("{0}_recblast_out".format(target_species).replace(' ', '_') + '/' +
-                                         "{0}_{1}_tmp".format(blast_type,
+                                         "{0}_{1}_tmp".format(blast_type_1,
                                                               self.seq_record.name
                                                               ).replace(' ', '_') + '/' +
-                                         "{0}_{1}_{2}_to_{3}.ID_Scores".format(blast_type,
+                                         "{0}_{1}_{2}_to_{3}.ID_Scores".format(blast_type_1,
                                                                                self.seq_record.name,
                                                                                query_species,
                                                                                target_species
                                                                                ).replace(' ', '_')),
             recblast_output_unanno=Path("{0}_recblast_out".format(target_species).replace(' ', '_') + '/' +
-                                        "{0}_{1}_tmp".format(blast_type,
+                                        "{0}_{1}_tmp".format(blast_type_1,
                                                              self.seq_record.name
                                                              ).replace(' ', '_') + '/' +
-                                        "unannotated_{0}_{1}.fasta".format(blast_type,
+                                        "unannotated_{0}_{1}.fasta".format(blast_type_1,
                                                                            self.seq_record.name
                                                                            ).replace(' ', '_')),
             recblast_output=Path("{0}_recblast_out".format(target_species).replace(' ', '_') + '/' +
-                                 "{0}_{1}.{2}".format(blast_type,
+                                 "{0}_{1}.{2}".format(blast_type_1,
                                                       self.seq_record.name,
                                                       output_type
                                                       ).replace(' ', '_')),
             blast_nohits=Path("{0}_recblast_out".format(target_species).replace(' ', '_') + '/' +
-                              "{0}_{1}.no-hits".format(blast_type,
+                              "{0}_{1}.no-hits".format(blast_type_1,
                                                        self.seq_record.name
                                                        ).replace(' ', '_'))
         )
@@ -1172,10 +1192,10 @@ class RecBlast(object):
                 print('\t' * level, 'Forward Blast DB set to auto, chosing fw_blast_db...')
             if verbose > 1:
                 print('\t' * level, 'Blast DB location set to: ', BLASTDB)
-            if blast_type.lower() in ['blastp', 'blastx', 'tblastx']:
+            if blast_type_1.lower() in ['blastp', 'blastx', 'tblastx']:
                 db_type = 'protein'
-            elif blast_type.lower() in ['blastn', 'tblastn']:
-                db_type = 'genomic'
+            elif blast_type_1.lower() in ['blastn', 'tblastn']:
+                db_type = 'genome'
             else:
                 print('\t' * level, 'Unable to determing blast db type!')
                 return rc_container_full
@@ -1214,13 +1234,13 @@ class RecBlast(object):
             try:
                 if fw_blast_kwargs:
                     if verbose:
-                        for key, item in fw_blast_kwargs:
+                        for key, item in fw_blast_kwargs.items():
                             print('\t' * level, '{0}\t=\t{1}'.format(key, item))
                     fwblasthandle, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
                                                      database=fw_blast_db, query_species=query_species,
                                                      filetype=infile_type, BLASTDB=BLASTDB,
-                                                     blast_type=blast_type, local_blast=local_blast_1, expect=expect,
-                                                     megablast=megablast,
+                                                     blast_type=blast_type_1, local_blast=local_blast_1, expect=expect,
+                                                     megablast=megablast, n_threads=n_threads,
                                                      blastoutput_custom=str(output_paths['forward_blast_output']),
                                                      perc_ident=perc_ident, verbose=verbose, write=write_intermediates,
                                                      **fw_blast_kwargs)
@@ -1228,8 +1248,8 @@ class RecBlast(object):
                     fwblasthandle, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
                                                      database=fw_blast_db, query_species=query_species,
                                                      filetype=infile_type, BLASTDB=BLASTDB,
-                                                     blast_type=blast_type, local_blast=local_blast_1, expect=expect,
-                                                     megablast=megablast,
+                                                     blast_type=blast_type_1, local_blast=local_blast_1, expect=expect,
+                                                     megablast=megablast, n_threads=n_threads,
                                                      blastoutput_custom=str(output_paths['forward_blast_output']),
                                                      perc_ident=perc_ident, verbose=verbose, write=write_intermediates)
             except Exception as err:
@@ -1243,7 +1263,7 @@ class RecBlast(object):
             if local_blast_1:
                 if verbose > 1:
                     print('\t' * level)
-                from io import StringIO
+
                 with StringIO(fwblasthandle) as fin:
                     try:
                         fwblastrecord = NCBIXML.read(fin)
@@ -1333,11 +1353,11 @@ class RecBlast(object):
             output_paths['reverse_blast_output'].append(
                 Path("{0}_recblast_out".format(target_species).replace(' ', '_') +
                      '/' +
-                     "{0}_{1}_tmp".format(blast_type,
+                     "{0}_{1}_tmp".format(blast_type_2,
                                           self.seq_record.name
                                           ).replace(' ', '_') +
                      '/' +
-                     "{0}_{1}_{3}_to_{2}_{4}.xml".format(blast_type,
+                     "{0}_{1}_{3}_to_{2}_{4}.xml".format(blast_type_2,
                                                          self.seq_record.name,
                                                          query_species,
                                                          target_species,
@@ -1346,15 +1366,20 @@ class RecBlast(object):
                      ))
             if verbose:
                 print('\t' * level, 'Performing Reverse Blast:')
-            if rv_blast_db == 'auto':
+            if (rv_blast_db == 'auto') | (rv_blast_db == 'auto-transcript'):
                 level += 1
                 if verbose:
                     print('\t' * level, 'Reverse Blast DB set to auto, choosing rv_blast_db...')
                     print('\t' * level, 'Blast DB location set to: ', BLASTDB)
-                if sum([1 for i in ['blastp', 'blastx', 'tblastx'] if blast_type.lower() in i]):
+                if sum([1 for i in ['blastp', 'blastx', 'tblastx'] if blast_type_2.lower() in i]):
                     db_type = 'protein'
-                elif sum([1 for i in ['blastn', 'tblastn'] if blast_type.lower() in i]):
-                    db_type = 'genomic'
+                elif sum([1 for i in ['blastn', 'tblastn'] if blast_type_2.lower() in i]):
+                    if rv_blast_db == 'auto-transcript':
+                        if verbose:
+                            print('\t' * level, 'Reverse Blast DB set to transcript!')
+                        db_type = 'transcript'
+                    else:
+                        db_type = 'genome'
                 else:
                     return rc_container_full
                 BLASTDB_path = Path(BLASTDB).absolute()
@@ -1385,12 +1410,14 @@ class RecBlast(object):
                 try:
                     if rv_blast_kwargs:
                         if verbose:
-                            print('\t' * level, rv_blast_kwargs)
+                            for key, item in rv_blast_kwargs.items():
+                                print('\t' * level, key, '\t', item)
                         rvblasthandle, blast_err = blast(seq_record=entry_record, target_species=target_species,
                                                          database=rv_blast_db, query_species=query_species,
                                                          filetype=infile_type, BLASTDB=BLASTDB,
-                                                         blast_type=blast_type, local_blast=local_blast_2,
-                                                         expect=expect,
+                                                         blast_type=blast_type_2, local_blast=local_blast_2,
+                                                         expect=expect, n_threads=n_threads,
+                                                         query_length=len(self.seq_record),
                                                          megablast=megablast, blastoutput_custom=str(
                                 output_paths['reverse_blast_output'][index]),
                                                          perc_ident=perc_ident, verbose=verbose,
@@ -1400,8 +1427,9 @@ class RecBlast(object):
                         rvblasthandle, blast_err = blast(seq_record=entry_record, target_species=target_species,
                                                          database=rv_blast_db, query_species=query_species,
                                                          filetype=infile_type, BLASTDB=BLASTDB,
-                                                         blast_type=blast_type, local_blast=local_blast_2,
-                                                         expect=expect,
+                                                         blast_type=blast_type_2, local_blast=local_blast_2,
+                                                         expect=expect, n_threads=n_threads,
+                                                         query_length=len(self.seq_record),
                                                          megablast=megablast, blastoutput_custom=str(
                                 output_paths['reverse_blast_output'][index]),
                                                          perc_ident=perc_ident, verbose=verbose,
@@ -1419,7 +1447,6 @@ class RecBlast(object):
                     with output_paths['reverse_blast_output'].open() as fin:
                         rvblastrecord = NCBIXML.read(fin)
                 else:
-                    from io import StringIO
                     with StringIO(rvblasthandle) as fin:
                         rvblastrecord = NCBIXML.read(fin)
             else:
@@ -1477,13 +1504,15 @@ class SearchInstance(object):
         return
 
 
-def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='fasta', output_type='fasta',
+def recblastMP(seqfile, target_species, fw_blast_db='auto', infile_type='fasta', output_type='fasta',
                host='localhost', user='postgres', driver='psycopg2',
-               query_species='Homo sapiens', blast_type='blastn', local_blast_1=False, local_blast_2=False,
-               rv_blast_db='nt', expect=10, perc_score=0.5, perc_ident=50, perc_length=0.5, megablast=True, email='',
+               query_species='Homo sapiens', blast_type_1='blastn', blast_type_2='blastn', local_blast_1=False,
+               local_blast_2=False,
+               rv_blast_db='auto-transcript', expect=10, perc_score=0.5, perc_ident=50, perc_length=0.5, megablast=True,
+               email='',
                id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50, passwd='',
                fw_id_db_version='auto', BLASTDB='/usr/db/blastdb',
-               verbose='v', max_n_processes=20, n_threads=1, write_intermediates=False, write_final=True,
+               verbose='v', max_n_processes='auto', n_threads=2, write_intermediates=False, write_final=True,
                fw_blast_kwargs=None, rv_blast_kwargs=None):
     """
 
@@ -1601,18 +1630,24 @@ def recblastMP(seqfile, target_species, fw_blast_db='chromosome', infile_type='f
     else:
         n_species = 1
     n_jobs = len(rec_handle) * n_species
-    if n_jobs > max_n_processes:
+    if isinstance(max_n_processes, str):
+        max_n_processes = multiprocessing.cpu_count()
+        print('CPU count: ', max_n_processes)
+    if n_jobs * n_threads > max_n_processes:
         print('Optimal number of processes would be above max limit, using limit instead!')
-        n_processes = max_n_processes
+        n_processes = max_n_processes / n_threads
     else:
         n_processes = n_jobs
+        if verbose:
+            print('Number of processes to be made: ', n_processes)
     if verbose >= 1:
         print('Creating RecBlast Threads... ')
     rec_blast_instances = [RecBlastMP_Thread(proc_id=str(i + 1), rb_queue=rb_queue, rb_results_queue=rb_results,
                                              fw_blast_db=fw_blast_db, BLASTDB=BLASTDB,
                                              infile_type=infile_type, output_type=output_type,
                                              query_species=query_species,
-                                             blast_type=blast_type, local_blast_1=local_blast_1,
+                                             blast_type_1=blast_type_1, blast_type_2=blast_type_2,
+                                             local_blast_1=local_blast_1,
                                              local_blast_2=local_blast_2,
                                              rv_blast_db=rv_blast_db, expect=expect, perc_score=perc_score,
                                              perc_ident=perc_ident,
@@ -1713,4 +1748,26 @@ def cleanup_fasta_input(handle, filetype='fasta', write=True):
 
 
 def count_dups(recblast_out):
-    pass
+    master_list = list()
+    pat = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for gi
+           re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for accession
+           re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for generic ID
+           re.compile(':(\d+)-(\d+)'),  # regex for sequence range
+           re.compile('\[\|(\d*)\|\]')]  # regex for items in annotation
+    for rc in recblast_out:
+        for species, rc_spec_rec in rc.items():
+            for gene, rc_rec in rc_spec_rec.items():
+                rc_out = rc_rec['recblast_output']
+                for record in rc_out:
+                    target_id, annotations = record.description.split('[+]')
+                    for p in pat:
+                        id_lst = p.findall(target_id)
+                        if id_lst:
+                            try:
+                                master_list += ''.join(id_lst[2:3])
+                            except IndexError:
+                                try:
+                                    master_list += ''.join(id_lst[2])
+                                except IndexError:
+                                    raise
+                            break
