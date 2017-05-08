@@ -802,7 +802,7 @@ def id_search(id_rec, id_type='brute', verbose=True):
 
 
 class FetchSeqMP(multiprocessing.Process):
-    def __init__(self, id_queue, seq_out_queue, delim, id_type, server, species, source, db,
+    def __init__(self, id_queue, seq_out_queue, delim, id_type, server, species, source, db, add_length,
                  host, driver, version, user, passwd, email, output_type, batch_size, verbose, n_subthreads):
         multiprocessing.Process.__init__(self)
         # Queues
@@ -816,6 +816,7 @@ class FetchSeqMP(multiprocessing.Process):
         self.species = species
         self.source = source
         self.db = db
+        self.add_length = add_length
         # SQL items
         self.host = host
         self.driver = driver
@@ -840,7 +841,7 @@ class FetchSeqMP(multiprocessing.Process):
             try:
                 seq_dict, miss_items = fs_instance(passwd=self.passwd, id_type=self.id_type, driver=self.driver,
                                                    user=self.user, host=self.host, db=self.db, delim=self.delim,
-                                                   server=self.server, version=self.version,
+                                                   server=self.server, version=self.version, add_length=self.add_length,
                                                    species=self.species, source=self.source, verbose=self.verbose,
                                                    n_threads=self.n_subthreads)
             except Exception as err:
@@ -858,7 +859,7 @@ class FetchSeq(object):  # The meat of the script
         self.id_rec = id_rec
 
     def __call__(self, delim, species, version, source, passwd, id_type, driver, user, host, db, n_threads, server,
-                 verbose):
+                 verbose, add_length):
         # out_file = Path(output_name + '.' + output_type)
         if verbose > 1:
             print('Full header for Entry:')
@@ -946,7 +947,19 @@ class FetchSeq(object):  # The meat of the script
                         if verbose > 1:
                             print('No sequence range found, continuing...')
                         continue
-                    id_range = ':' + '-'.join(seq_range[k])
+                    if (add_length[0] != 0) | (add_length[1] != 0):
+                        if verbose > 1:
+                            print('Adding {0} steps to the beginning and {1} steps '
+                                  'to the end of the sequence!'.format(add_length[0], add_length[1]))
+                        if verbose > 2:
+                            print(seq_range[k][0], seq_range[k][1], sep='\t')
+                            print(-add_length[0], add_length[1], sep='\t')
+                            print('_'*len(seq_range[k][0]+seq_range[k][1]))
+                        add_length = (-int(add_length[0]), add_length[1])
+                        seq_range[k] = tuple(map(lambda x, y: int(x) + y, seq_range[k], add_length))
+                        if verbose > 2:
+                            print(seq_range[k][0], seq_range[k][1], sep='\t')
+                    id_range = ':' + '-'.join([str(i) for i in seq_range[k]])
                     if verbose > 1:
                         print('Sequence range: ',seq_range)
                     if int(seq_range[k][0]) > int(seq_range[k][1]):
@@ -1049,7 +1062,7 @@ class FetchSeq(object):  # The meat of the script
 
 def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='brute', server=None, source="SQL",
                db="bioseqdb", host='localhost', driver='psycopg2', version='1.0', user='postgres', passwd='', email='',
-               batch_size=50, output_type="fasta", verbose=1, n_threads=1, n_subthreads=1):
+               batch_size=50, output_type="fasta", verbose=1, n_threads=1, n_subthreads=1, add_length=(0,0)):
 
     if isgenerator(ids):
         if verbose > 1:
@@ -1098,7 +1111,7 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
                                delim=delim, id_type=id_type, server=server, species=species, source=source, db=db,
                                host=host, driver=driver, version=version, user=user, passwd=passwd, email=email,
                                output_type=output_type, batch_size=batch_size, verbose=verbose,
-                               n_subthreads=n_subthreads)
+                               n_subthreads=n_subthreads, add_length=add_length)
                     for i in range(n_threads)]
     if verbose > 1:
         print('Done! Starting processes...')
