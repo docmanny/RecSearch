@@ -181,7 +181,7 @@ def id_ranker_searchio(qresults, min_hsps=1):
     if not qresults:
         raise Exception('No hits in Query Results above min_hsps!')
     for hit in qresults:
-
+        pass
 
 
 
@@ -484,17 +484,21 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
 def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, verbose=False):
     seqrec = ''
     try_get_id = True
+    if id_type == 'scaffold':
+        lookup_key = 'name'
+    else:
+        lookup_key = id_type
     if try_get_id:
         try:
             if verbose:
                 print("\t\tNow searching database {0} for {1}: {2}".format(sub_db_name, id_type, identifier))
-            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{id_type: identifier}))
+            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{lookup_key: identifier}))
             if verbose:
                 print('\tGot sequence for {}!'.format(identifier))
             try_get_id = False
         except KeyError:
             sleep(0.1)
-            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{id_type: identifier}))
+            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{lookup_key: identifier}))
             if verbose:
                 print('\tGot sequence for {}!'.format(identifier))
             try_get_id = False
@@ -511,13 +515,13 @@ def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, verbose=
             if verbose:
                 print("\t\tNow searching database {0} for {1}: {2}".format(sub_db_name, id_type,
                                                                            identifier_sans_subnumber))
-            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{id_type: identifier_sans_subnumber}))
+            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{lookup_key: identifier_sans_subnumber}))
             if verbose:
                 print('\tGot sequence for {}!'.format(identifier))
             try_get_id = False
         except KeyError:
             sleep(0.1)
-            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{id_type: identifier_sans_subnumber}))
+            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{lookup_key: identifier_sans_subnumber}))
             if verbose:
                 print('\tGot sequence for {}!'.format(identifier))
             try_get_id = False
@@ -563,11 +567,11 @@ def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, verbose=
 
     if try_get_id:
         try:
-            id_type = input('Last shot, chose an ID type: '
+            lookup_key = input('Last shot, chose an ID type: '
                             '[accession, primary_id, gi, version, display_id, name]')
-            if id_type == 'exit':
+            if lookup_key == 'exit':
                 exit(exit(), 'Script ended!')
-            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{id_type: identifier}))
+            seqrec = biosql_DBSeqRecord_to_SeqRecord(dtbase.lookup(**{lookup_key: identifier}))
             if verbose:
                 print('\tGot sequence for {}!'.format(identifier))
         except IndexError as err5:
@@ -692,6 +696,7 @@ def id_search(id_rec, id_type='brute', verbose=True):
     # Define the regex functions
     p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for gi
          re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for accession
+         re.compile('(scaffold)([| _:]+)(\d+\.?\d*)(.*)'),    # regex for scaffolds
          re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for generic ID
          re.compile(':(\d+)-(\d+)'),  # regex for sequence range
          ]
@@ -711,11 +716,15 @@ def id_search(id_rec, id_type='brute', verbose=True):
         elif bool(p[0].findall(id_rec)):
             id_type = 'gi'
             if verbose > 1:
-                print(p[1].findall(id_rec))
+                print(p[0].findall(id_rec))
         elif bool(p[2].findall(id_rec)):
+            id_type = 'scaffold'
+            if verbose > 1:
+                print(p[2].findall(id_rec))
+        elif bool(p[3].findall(id_rec)):
             id_type = 'id'
             if verbose > 1:
-                print(p[1].findall(id_rec))
+                print(p[3].findall(id_rec))
         else:
             raise Exception('Couldn\'t identify the id!')
         if verbose > 1:
@@ -730,11 +739,11 @@ def id_search(id_rec, id_type='brute', verbose=True):
             if verbose > 1:
                 print('Item:\t', item_parts)
             id_list_ids.append(item_parts[0][0:3])
-            if bool(p[3].findall(id_rec)):
+            if bool(p[4].findall(id_rec)):
                 # Seq_range will be a list of tuples where the second element is the range, and the first
                 # is the ID. This way, the function accommodates sequences with a subrange and sequences without a
                 # subrange.
-                seq_range[''.join(p[0].findall(id_rec)[0][0:3])] = p[3].findall(id_rec)[0]
+                seq_range[''.join(p[0].findall(id_rec)[0][0:3])] = p[4].findall(id_rec)[0]
                 if verbose > 1:
                     print('Found sequence delimiters in IDs!')
         else:
@@ -748,13 +757,28 @@ def id_search(id_rec, id_type='brute', verbose=True):
             if verbose > 1:
                 print('Item:\t', item_parts)
             id_list_ids.append(item_parts[0][0:3])
-            if bool(p[3].findall(id_rec)):
-                seq_range[''.join(p[1].findall(id_rec)[0][0:3])] = p[3].findall(id_rec)[0]
+            if bool(p[4].findall(id_rec)):
+                seq_range[''.join(p[1].findall(id_rec)[0][0:3])] = p[4].findall(id_rec)[0]
                 if verbose > 1:
                     print('Found sequence delimiters in IDs!')
         else:
             found_id = False
     elif id_type == 'id':
+        if bool(p[3].findall(id_rec)):
+            found_id = True
+            if verbose > 1:
+                print('Successfully found ID numbers, compiling list!')
+            item_parts = p[3].findall(id_rec)
+            if verbose > 1:
+                print('Item:\t', item_parts)
+            id_list_ids.append(item_parts[0][0:3])
+            if bool(p[4].findall(id_rec)):
+                seq_range[''.join(p[2].findall(id_rec)[0][0:3])] = p[4].findall(id_rec)[0]
+                if verbose > 1:
+                    print('Found sequence delimiters in IDs!')
+        else:
+            found_id = False
+    elif id_type == 'scaffold':
         if bool(p[2].findall(id_rec)):
             found_id = True
             if verbose > 1:
@@ -763,8 +787,8 @@ def id_search(id_rec, id_type='brute', verbose=True):
             if verbose > 1:
                 print('Item:\t', item_parts)
             id_list_ids.append(item_parts[0][0:3])
-            if bool(p[3].findall(id_rec)):
-                seq_range[''.join(p[2].findall(id_rec)[0][0:3])] = p[3].findall(id_rec)[0]
+            if bool(p[4].findall(id_rec)):
+                seq_range[''.join(p[2].findall(id_rec)[0][0:3])] = p[4].findall(id_rec)[0]
                 if verbose > 1:
                     print('Found sequence delimiters in IDs!')
         else:
@@ -912,8 +936,10 @@ class FetchSeq(object):  # The meat of the script
                             seq_description_full = p[0].findall(seqdict[k].description)[0]
                         elif id_type == 'accession':
                             seq_description_full = p[1].findall(seqdict[k].description)[0]
-                        elif id_type == 'id':
+                        elif id_type == 'scaffold':
                             seq_description_full = p[2].findall(seqdict[k].description)[0]
+                        elif id_type == 'id':
+                            seq_description_full = p[3].findall(seqdict[k].description)[0]
                         else:
                             seq_description_full = p[4].findall(seqdict[k].description)[0]
                     else:
@@ -921,6 +947,8 @@ class FetchSeq(object):  # The meat of the script
                             print('No sequence range found, continuing...')
                         continue
                     id_range = ':' + '-'.join(seq_range[k])
+                    if verbose > 1:
+                        print('Sequence range: ',seq_range)
                     if int(seq_range[k][0]) > int(seq_range[k][1]):
                         """tmp_id = seqdict[k].id
                         tmp_name = seqdict[k].name
@@ -929,6 +957,9 @@ class FetchSeq(object):  # The meat of the script
                         tmp_feat = seqdict[k].features
                         tmp_annotations = seqdict[k].annotations
                         tmp_let_anno = seqdict[k].letter_annotations"""
+                        if verbose > 1:
+                            print('Starting seq_range is larger than ending seq_range - sequence is '
+                                  'in the (-) direction! Reversing...')
                         seqdict[k].seq = seqdict[k][
                                          int(seq_range[k][1]):int(seq_range[k][0])].seq.reverse_complement()
 
@@ -1018,7 +1049,7 @@ class FetchSeq(object):  # The meat of the script
 
 def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='brute', server=None, source="SQL",
                db="bioseqdb", host='localhost', driver='psycopg2', version='1.0', user='postgres', passwd='', email='',
-               batch_size=50, output_type="fasta", verbose=1, n_threads=2, n_subthreads=1):
+               batch_size=50, output_type="fasta", verbose=1, n_threads=1, n_subthreads=1):
 
     if isgenerator(ids):
         if verbose > 1:
