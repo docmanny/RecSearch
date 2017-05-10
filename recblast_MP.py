@@ -92,6 +92,7 @@ def get_searchdb(search_type, species, db, verbose=True, level=1):
             raise Exception('DatabaseError:', 'No databases were found!')
     if verbose:
         print('\t' * level, '{0} DB chosen: {1}'.format(search_type, search_db))
+    return search_db
 
 
 def nuc_to_prot_compare(prot_sub, nuc_query, perc_ident, perc_length, trans_table=1, verbose=True):
@@ -454,9 +455,18 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
 
         if verbose:
             print('Done with Blast!')
+    """
     with StringIO(blast_result) as fin:
         try:
             blast_record = SearchIO.read(fin, search_rec_type)
+        except Exception as err:
+            print('Error reading Forward Blast Results! Aborting!')
+            print('Error details:\n', err)
+            raise err
+    """
+    with StringIO(blast_result) as fin:
+        try:
+            blast_record = NCBIXML.read(fin)
         except Exception as err:
             print('Error reading Forward Blast Results! Aborting!')
             print('Error details:\n', err)
@@ -1134,15 +1144,10 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
     n_jobs = len(ids)
     # for i in range(len(ids)):
     while n_jobs:
-        print('--------------', n_jobs)
         seq, missing = results.get()
-        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
         output_dict.update(seq)
-        print('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB')
         missing_items_list.append(missing)
-        print('CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC')
         n_jobs -= 1
-        print('DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD')
     if verbose > 1:
         print('Done! Finished fetching sequences!')
         print('Closing processes!')
@@ -1163,12 +1168,13 @@ class RecBlastMP_Thread(multiprocessing.Process):
 
     def __init__(self, proc_id, rb_queue, rb_results_queue, fw_blast_db, infile_type, output_type, BLASTDB,
                  query_species, blast_type_1, blast_type_2, local_blast_1, local_blast_2, rv_blast_db, expect,
-                 perc_score,
+                 perc_score, outfolder,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
                  write_intermediates):
         multiprocessing.Process.__init__(self)
         self.name = proc_id
+        self.outfolder = outfolder
         self.rb_queue = rb_queue
         self.rb_results_queue = rb_results_queue
         self.fw_blast_db = fw_blast_db
@@ -1203,8 +1209,9 @@ class RecBlastMP_Thread(multiprocessing.Process):
         self.write_intermediates = write_intermediates
 
     def run(self):  # The meat of the script
-        dtstr = dt.now().strftime('%y-%m-%d_%I-%M-%p_Proc-')
-        master_out = Path('.', dtstr + self.name)
+        master_out = self.outfolder.joinpath('Proc-{0}.log'.format(self.name)).absolute()
+        if self.verbose >1:
+            print(master_out)
         master_out_handle = master_out.open('w')
         old_sysout = sys.__stdout__
         sys.stdout = master_out_handle
@@ -1311,7 +1318,7 @@ class RecBlast(object):
                                                        self.seq_record.name
                                                        ).replace(' ', '_'))
         )
-        if write_intermediates:
+        """if write_intermediates:
             for path_type, path in output_paths.items():
                 try:
                     path.absolute().parent.mkdir(parents=True)
@@ -1321,6 +1328,7 @@ class RecBlast(object):
                     if verbose > 1:
                         print('\t' * level, '\t\tDirectory \"{}\" already exists! Continuing!'.format(
                             str(path.absolute().parent)))
+        """
         if blast_type_1 in ['blat', 'tblat']:
             try:
                 fw_blast_db = fw_blast_db[target_species]
@@ -1335,6 +1343,7 @@ class RecBlast(object):
                 print(Err)
                 return rc_container_full
         fwblast = rc_container['forward_blast']
+
         if fw_blast_db == 'skip':
             if verbose:
                 print('\t' * level, "\tSkipping Forward Blast! Using local file instead: ")
@@ -1396,11 +1405,13 @@ class RecBlast(object):
         fw_ids = rc_container['forward_ids']
         fw_ids['ids'] = f_id_ranked
         fw_ids['pretty_ids'] = f_id_out_list
+        """
         if write_intermediates:
             if verbose:
                 print('\t' * (level + 1), 'Writing Forward ID Hits to output!')
             with output_paths['forward_id_score_output'].open('w') as fidout:
                 fidout.writelines(f_id_out_list)
+        """
         if not f_id_out_list:
             print('Forward Blast yielded no hits, continuing to next sequence!')
             return rc_container_full
@@ -1473,7 +1484,7 @@ class RecBlast(object):
                     return rc_container_full
             if (rv_blast_db == 'auto') | (rv_blast_db == 'auto-transcript'):
                 try:
-                    fw_blast_db = get_searchdb(search_type=blast_type_1, species=target_species, db=BLASTDB,
+                    rv_blast_db = get_searchdb(search_type=blast_type_2, species=target_species, db=BLASTDB,
                                                verbose=verbose, level=level + 1)
                 except Exception as Err:
                     print(Err)
@@ -1497,8 +1508,9 @@ class RecBlast(object):
                                                          blast_type=blast_type_2, local_blast=local_blast_2,
                                                          expect=expect, n_threads=n_threads,
                                                          query_length=len(self.seq_record),
-                                                         megablast=megablast, blastoutput_custom=str(
-                                output_paths['reverse_blast_output'][index]),
+                                                         megablast=megablast,
+                                                         blastoutput_custom=str(
+                                                                           output_paths['reverse_blast_output'][index]),
                                                          perc_ident=perc_ident, verbose=verbose,
                                                          write=write_intermediates,
                                                          **rv_blast_kwargs)
@@ -1526,13 +1538,14 @@ class RecBlast(object):
             if verbose:
                 print('\t' * level, 'Done with Reverse Blast!')
                 print('\t' * level, 'Culling results using given criteria...')
+            reverse_hits = id_ranker(rvblastrecord, perc_score=perc_score, perc_length=perc_length,
+                                     expect=expect, verbose=verbose)
+            print(reverse_hits)
             reverse_blast_annotations = ['\t |[ {0} {1} ({2}) ]|'.format(anno[0], anno[1], anno[2]) for anno in
-                                         id_ranker(rvblastrecord, perc_score=perc_score, perc_length=perc_length,
-                                                   expect=expect, verbose=verbose)
-                                         ]
+                                         reverse_hits]
             if not reverse_blast_annotations:
-                print('\t' * level, 'No Reverse Blast Hits were found! Continuing to next Sequence!')
-                return rc_container_full
+                print('\t' * level, 'No Reverse Blast Hits were found for this hit!')
+                print('\t' * level, 'Continuing to next Sequence!')
             else:
                 if verbose > 1:
                     print('\t' * level, 'Done. Annotating RecBlast Hits:')
@@ -1658,6 +1671,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
         if verbose >= 1:
             print('Done!')
 
+    # Calculation of processes to run
     if verbose > 1:
         print('Automatically calculating n_processes:')
     if isinstance(target_species, list):
@@ -1675,6 +1689,17 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
         n_processes = n_jobs
         if verbose:
             print('Number of processes to be made: ', n_processes)
+
+    # Get date-time and make output folder
+    date_str = dt.now().strftime('%y-%m-%d_%I-%M-%p')
+    outfolder = Path('./RecBlast_output/{0}/'.format(date_str))
+    try:
+        outfolder.mkdir(parents=True)
+    except FileExistsError:
+        pass
+
+
+    # RecBlast Thread init
     if verbose >= 1:
         print('Creating RecBlast Threads... ')
     rec_blast_instances = [RecBlastMP_Thread(proc_id=str(i + 1), rb_queue=rb_queue, rb_results_queue=rb_results,
@@ -1689,7 +1714,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                                              fw_source=fw_source, fw_id_db=fw_id_db, fetch_batch_size=fetch_batch_size,
                                              passwd=passwd,
                                              fw_id_db_version=fw_id_db_version, verbose=verbose, n_threads=n_threads,
-                                             host=host,
+                                             host=host, outfolder=outfolder,
                                              user=user, driver=driver, write_intermediates=write_intermediates,
                                              fw_blast_kwargs=fw_blast_kwargs, rv_blast_kwargs=rv_blast_kwargs)
                            for i in range(n_processes)]
@@ -1759,11 +1784,18 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
     '''
 
     if write_final:
-        recblast_write(recblast_out, verbose=verbose)
+        recblast_write(recblast_out, verbose=verbose, outfolder=outfolder)
     return recblast_out
 
 
-def recblast_write(rc_container, verbose=True):
+def recblast_write(rc_container, verbose=True, outfolder=None):
+    if outfolder is None:
+        date_str = dt.now().strftime('%y-%m-%d_%I-%M-%p')
+        outfolder = Path('./RecBlast_output/{0}/'.format(date_str)).absolute()
+        try:
+            outfolder.mkdir(parents=True)
+        except FileExistsError:
+            pass
     if isinstance(rc_container, list):
         for rc in rc_container:
             recblast_write(rc)
@@ -1783,7 +1815,7 @@ def recblast_write(rc_container, verbose=True):
                                                                                          rc_local['query_record'].name))
                         continue
                     else:
-                        recblast_output = rc_local['output_paths']['recblast_output'].absolute()
+                        recblast_output = outfolder.joinpath(rc_local['output_paths']['recblast_output'])
                         print('Output Location:\t', str(recblast_output))
                         try:
                             recblast_output.parent.mkdir(parents=True)
