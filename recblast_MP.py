@@ -56,6 +56,29 @@ class ProgressBar(object):
         print('', file=self.output)
 
 
+def percent_identity_searchio(hit, is_protein=True):
+    from math import log
+    size_mul = 3 if is_protein else 1
+    qali_size = size_mul * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
+    tali_size = sum([i[-1] - i[0] for i in merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit])])
+    ali_size = min(qali_size, tali_size)
+    if ali_size <= 0:
+        return 0
+    size_dif = qali_size - tali_size
+    size_dif = 0 if size_dif < 0 else size_dif
+    sum_match = sum([i.match_num for i in hit])
+    sum_rep = sum([i.match_rep_num for i in hit])
+    sum_mismatch = sum([i.mismatch_num for i in hit])
+    total = size_mul * (sum_match + sum_rep + sum_mismatch)
+    if total != 0:
+        millibad = (1000 * (sum([i.mismatch_num for i in hit]) * size_mul + sum([i.query_gap_num for i in hit]) +
+                            round(3 * log(1 + size_dif)))) / total
+    else:
+        raise Exception('Somehow your total in the percent_identity function was 0, so you broke the script!')
+    perc_ident = 100 - (millibad*0.1)
+    return perc_ident
+
+
 def get_searchdb(search_type, species, db, verbose=True, level=1):
     if verbose:
         print('\t' * level, 'Forward Blast DB set to auto, chosing fw_blast_db...')
@@ -173,96 +196,141 @@ def merge_ranges(ranges):
     yield current_start, current_stop
 
 
-def id_ranker_searchio(qresults, min_hsps=1):
-    assert isinstance(qresults, SearchIO.QueryResult), 'input record must be a SearchIO.QueryResult object!!!'
-
-    # lambda functions for filtering:
-    hit_minhsps = lambda hit: len(hit.hsps) >= min_hsps
-    qresults = qresults.hit_filter(hit_minhsps)
-    if not qresults:
-        raise Exception('No hits in Query Results above min_hsps!')
-    for hit in qresults:
-        pass
-
-
-
-def id_ranker(blastrecord, perc_score, expect, perc_length, hsp_cumu_score=True, align_scorelist=list(),
-              indent='', verbose=True):
+def id_ranker(record, perc_score, expect, perc_length, perc_ident, min_hsps=1, hsp_cumu_score=True,
+              align_scorelist=list(), indent='', verbose=True):
+    id_list=[]
     indent_internal = indent + '\t'
-    truthple = []
-    id_list = []
-    subject_range = []
-    query_start_end = []
-    if verbose > 1:
-        print(indent, 'Sorting through alignment\'s HSPs to get top scores of all alignments...')
-    for alignment in blastrecord.alignments:
-        subject_range_hsp = []
-        query_start_end_hsp = []
-        hsp_scorelist = []
-        if verbose > 3:
-            print('Number of HSPs: ', len(alignment.hsps))
-        for hsp in alignment.hsps:
-            hsp_scorelist.append(hsp.score)
-            subject_range_hsp.append(hsp.sbjct_start)
-            subject_range_hsp.append(hsp.sbjct_end)
-            query_start_end_hsp.append((hsp.query_start, hsp.query_end))
-        hsp_scorelist.sort(reverse=True)
-        query_start_end.append([i for i in merge_ranges(query_start_end_hsp)])
-        subject_range.append((subject_range_hsp[0], subject_range_hsp[-1]))
-        if verbose > 3:
-            print(indent_internal, "HSP Score List: \n", indent_internal+'\t', hsp_scorelist)
-        if hsp_cumu_score:
-            align_scorelist.append(sum(hsp_scorelist))
+    if isinstance(record, SearchIO.QueryResult):
+        print(indent_internal, 'SearchIO detected.')
+        # Figure out what kind of search program was run:
+        if record.program == 'blat':
+            if verbose > 2:
+                print(indent_internal, 'Results obtained from BLAT run.')
+        elif 'blast' in record.program:
+            if verbose > 2:
+                print(indent_internal, 'Results obtained from BLAST run.')
         else:
-            align_scorelist.append(hsp_scorelist[0])
-    if verbose > 1:
-        print(indent, 'Done with first-round sorting!')
-    if verbose > 3:
-        for align_index, alignment in enumerate(blastrecord.alignments):
-            print(indent_internal, alignment.title)
-            print(indent_internal, "\tAlignment Score List: \n\t", indent_internal, align_scorelist[align_index])
-            print(indent_internal, "\tQuery_start_end: \n\t", indent_internal, query_start_end[align_index])
-            print(indent_internal, "\tSubject Range: \n\t", indent_internal, subject_range[align_index])
-    if verbose > 1:
-        print(indent, 'Sorting through alignments to get all hits above threshold...')
+            raise Exception('Sorry, your program {} is not yet implemented for RecBlast!'.format(record.program))
+        # Create filter functions:
+        hit_minhsps = lambda hit: len(hit.hsps) >= min_hsps
+        hit_minscores = lambda hit: perc_score * sum([hsp.score for hsp in hit.hsps]) >= top_score
+        hit_minlength = lambda hit: perc_length * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start,
+                                                                                            hsp.query_end)
+                                                                                           for hsp in hit])
+                                                       ]) >= top_length
+        hit_perc_id = lambda hit: percent_identity_searchio(hit) >= perc_ident
+        #hit_minspan = lambda hit: perc_span * sum([sum(hsp.hit_span) for hsp in hit.hsps]) >= top_span
+        sort_scores = lambda hit: sum([hsp.score for hsp in hit.hsps])
 
-    for align_index, alignment in enumerate(blastrecord.alignments):
-        '''if verbose >3:
-            print(indent_internal, 'Alignment title: ', alignment.title)'''
-        score_threshold = (perc_score * align_scorelist[0])
-        length_alignment = sum([i[-1] - i[0] for i in query_start_end[align_index]])
-        align_len_threshold = blastrecord.query_length * perc_length
-        if hsp_cumu_score:
-            hsp_scoretotal = sum([hsp.score for hsp in alignment.hsps])
-            truthple.append((align_index, hsp_scoretotal >= score_threshold, hsp.expect <= expect,
-                             length_alignment >= align_len_threshold, alignment.title))
-        else:
-            truthple.append((align_index, hsp.score >= score_threshold, hsp.expect <= expect,
-                             length_alignment >= align_len_threshold, alignment.title))
-    if verbose > 3:
-        print(indent, 'List of Alignments and Criteria Status:')
-        print(indent_internal, 'i\t', 'Score\t', 'Expect\t', 'Length\t', 'Alignment.Title')
-        for i in range(len(blastrecord.alignments)):
-            print(indent_internal, "{0}\t{1}\t{2}\t{3}\t{4}".format(truthple[i][0], truthple[i][1], truthple[i][2],
-                                                                    truthple[i][3], truthple[i][4]))
-    for i in truthple:
-        if i[1] and i[2] and i[3]:
-            id_list.append((blastrecord.alignments[i[0]].title,
-                            '[:{0}-{1}]'.format(subject_range[i[0]][0],
-                                                subject_range[i[0]][1]),
-                            align_scorelist[i[0]]))
+        # Get top stats:
+        top_score = max([sum([hsp.score for hsp in hit.hsps]) for hit in record])
+        top_length = max([sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end)
+                                                                   for hsp in hit])
+                               ]) for hit in record])
+
+        # Execute filters:
+        # HSP
+        record = record.hit_filter(hit_minhsps)
+        if not record:
+            raise Exception('No hits in Query Results have {} or more HSPs!'.format(min_hsps))
+        # Length
+        record = record.hit_filter(hit_minlength)
+        if not record:
+            raise Exception('No hits in Query Results above min_length {0}!'.format((top_length * perc_length)))
+        # Score
+        record = record.hit_filter(hit_minscores)
+        if not record:
+            raise Exception('No hits in Query Results above minimum score {0}!'.format((top_score * perc_score)))
+        # Percent Identity
+        record = record.hit_filter(hit_perc_id)
+        if not record:
+            raise Exception('No hits in Query Results above minimum score {0}!'.format((top_score * perc_score)))
+        record.sort(key=sort_scores, reverse=True, in_place=True)
+
+        # Add items to id_list
+        for hit in record:
+            seq_name = hit.id
+            seq_range = ['[:{0}-{1}]'.format(i[0], i[-1]) for i in merge_ranges([(hsp.query_start,
+                                                                                  hsp.query_end)
+                                                                                 for hsp in hit])]
+            seq_score = sum([hsp.score for hsp in hit.hsps])
             if verbose > 2:
-                print(indent, "Alignment {} added to id_list!".format(i[4]))
-        else:
-            if verbose > 2:
-                print(indent, "WARNING: ALIGNMENT {} FAILED TO MEET CRITERIA!".format(i[4]))
-                if not i[1]:
-                    print(indent_internal, 'Score was below threshold!')
-                if not i[2]:
-                    print(indent_internal, 'Expect was below threshold!')
-                if not i[3]:
-                    print(indent_internal, 'Length was below threshold!')
-    sorted(id_list, reverse=True, key=itemgetter(2))
+                print(indent_internal, "Adding hit {} to id list".format(seq_name+seq_range))
+            id_list.append((seq_name, seq_range, seq_score))
+    else:
+        truthple = []
+        subject_range = []
+        query_start_end = []
+        if verbose > 1:
+            print(indent, 'Sorting through alignment\'s HSPs to get top scores of all alignments...')
+        for alignment in record.alignments:
+            subject_range_hsp = []
+            query_start_end_hsp = []
+            hsp_scorelist = []
+            if verbose > 3:
+                print('Number of HSPs: ', len(alignment.hsps))
+            for hsp in alignment.hsps:
+                hsp_scorelist.append(hsp.score)
+                subject_range_hsp.append(hsp.sbjct_start)
+                subject_range_hsp.append(hsp.sbjct_end)
+                query_start_end_hsp.append((hsp.query_start, hsp.query_end))
+            hsp_scorelist.sort(reverse=True)
+            query_start_end.append([i for i in merge_ranges(query_start_end_hsp)])
+            subject_range.append((subject_range_hsp[0], subject_range_hsp[-1]))
+            if verbose > 3:
+                print(indent_internal, "HSP Score List: \n", indent_internal+'\t', hsp_scorelist)
+            if hsp_cumu_score:
+                align_scorelist.append(sum(hsp_scorelist))
+            else:
+                align_scorelist.append(hsp_scorelist[0])
+        if verbose > 1:
+            print(indent, 'Done with first-round sorting!')
+        if verbose > 3:
+            for align_index, alignment in enumerate(record.alignments):
+                print(indent_internal, alignment.title)
+                print(indent_internal, "\tAlignment Score List: \n\t", indent_internal, align_scorelist[align_index])
+                print(indent_internal, "\tQuery_start_end: \n\t", indent_internal, query_start_end[align_index])
+                print(indent_internal, "\tSubject Range: \n\t", indent_internal, subject_range[align_index])
+        if verbose > 1:
+            print(indent, 'Sorting through alignments to get all hits above threshold...')
+
+        for align_index, alignment in enumerate(record.alignments):
+            '''if verbose >3:
+                print(indent_internal, 'Alignment title: ', alignment.title)'''
+            score_threshold = (perc_score * align_scorelist[0])
+            length_alignment = sum([i[-1] - i[0] for i in query_start_end[align_index]])
+            align_len_threshold = record.query_length * perc_length
+            if hsp_cumu_score:
+                hsp_scoretotal = sum([hsp.score for hsp in alignment.hsps])
+                truthple.append((align_index, hsp_scoretotal >= score_threshold, hsp.expect <= expect,
+                                 length_alignment >= align_len_threshold, alignment.title))
+            else:
+                truthple.append((align_index, hsp.score >= score_threshold, hsp.expect <= expect,
+                                 length_alignment >= align_len_threshold, alignment.title))
+        if verbose > 3:
+            print(indent, 'List of Alignments and Criteria Status:')
+            print(indent_internal, 'i\t', 'Score\t', 'Expect\t', 'Length\t', 'Alignment.Title')
+            for i in range(len(record.alignments)):
+                print(indent_internal, "{0}\t{1}\t{2}\t{3}\t{4}".format(truthple[i][0], truthple[i][1], truthple[i][2],
+                                                                        truthple[i][3], truthple[i][4]))
+        for i in truthple:
+            if i[1] and i[2] and i[3]:
+                id_list.append((record.alignments[i[0]].title,
+                                '[:{0}-{1}]'.format(subject_range[i[0]][0],
+                                                    subject_range[i[0]][1]),
+                                align_scorelist[i[0]]))
+                if verbose > 2:
+                    print(indent, "Alignment {} added to id_list!".format(i[4]))
+            else:
+                if verbose > 2:
+                    print(indent, "WARNING: ALIGNMENT {} FAILED TO MEET CRITERIA!".format(i[4]))
+                    if not i[1]:
+                        print(indent_internal, 'Score was below threshold!')
+                    if not i[2]:
+                        print(indent_internal, 'Expect was below threshold!')
+                    if not i[3]:
+                        print(indent_internal, 'Length was below threshold!')
+        sorted(id_list, reverse=True, key=itemgetter(2))
     return id_list
 
 
