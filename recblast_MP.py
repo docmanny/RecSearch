@@ -1,5 +1,4 @@
 import logging
-import multiprocessing
 import re
 import subprocess
 import sys
@@ -10,6 +9,7 @@ from operator import itemgetter
 from pathlib import Path
 from time import sleep
 
+import multiprocess as multiprocessing
 from Bio import SearchIO
 from Bio import SeqIO
 from Bio import __version__ as bp_version
@@ -212,15 +212,23 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, min_hsps=1, h
         else:
             raise Exception('Sorry, your program {} is not yet implemented for RecBlast!'.format(record.program))
         # Create filter functions:
-        hit_minhsps = lambda hit: len(hit.hsps) >= min_hsps
-        hit_minscores = lambda hit: perc_score * sum([hsp.score for hsp in hit.hsps]) >= top_score
-        hit_minlength = lambda hit: perc_length * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start,
-                                                                                            hsp.query_end)
-                                                                                           for hsp in hit])
-                                                       ]) >= top_length
-        hit_perc_id = lambda hit: percent_identity_searchio(hit) >= perc_ident
+        def hit_minhsps(hit):
+            return len(hit.hsps) >= min_hsps
+        def hit_minscores(hit):
+            return sum([hsp.score for hsp in hit.hsps]) >= perc_score * top_score
+        def hit_minlength(hit):
+            return sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])
+                        ]) >= perc_length * top_length
+        def hit_perc_id(hit):
+            return percent_identity_searchio(hit) >= perc_ident
         #hit_minspan = lambda hit: perc_span * sum([sum(hsp.hit_span) for hsp in hit.hsps]) >= top_span
-        sort_scores = lambda hit: sum([hsp.score for hsp in hit.hsps])
+
+        # Two more functions for to make great progress
+        def sort_scores(hit):
+            return sum([hsp.score for hsp in hit.hsps])
+        def hit_target_span(hit):
+            return list(merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit]))
+
 
         # Get top stats:
         top_score = max([sum([hsp.score for hsp in hit.hsps]) for hit in record])
@@ -250,9 +258,7 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, min_hsps=1, h
         # Add items to id_list
         for hit in record:
             seq_name = hit.id
-            seq_range = ['[:{0}-{1}]'.format(i[0], i[-1]) for i in merge_ranges([(hsp.query_start,
-                                                                                  hsp.query_end)
-                                                                                 for hsp in hit])]
+            seq_range = '[:'+''.join(['{0}-{1};'.format(i[0], i[-1]) for i in hit_target_span(hit)]).rstrip(';')+']'
             seq_score = sum([hsp.score for hsp in hit.hsps])
             if verbose > 2:
                 print(indent_internal, "Adding hit {} to id list".format(seq_name+seq_range))
@@ -433,6 +439,7 @@ class RecBlastContainer(dict):
         return strobj
     """
 
+
 def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blast_type='blastn',
           local_blast=False, expect=0.005, megablast=True, use_index=False, blastoutput_custom="", perc_ident=75,
           verbose=True, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', **blast_kwargs):
@@ -448,14 +455,33 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
         print("Now starting BLAST...")
 
     if blast_type.lower() in ['blat', 'tblat']:
-        blat_db = get_searchdb(search_type=blast_type, species=target_species, db=BLASTDB, verbose=bool(verbose),
-                               level=1)
-        args_expanded = ['gfClient', 'localhost', str(database), BLASTDB, seq_record.format('fasta'), '/dev/stdout']
+        if verbose >1:
+            print('Search Type: ', blast_type)
+        # blat_db = get_searchdb(search_type=blast_type, species=target_species, db=BLASTDB, verbose=verbose,
+        #                      level=1)
+        filename = target_species+seq_record.name+'.pslx'
+        args_expanded = ['gfClient', 'localhost', str(database), '/', '/dev/stdin', '/dev/stdout']
         if blast_type.lower() == 'tblat':
             args_expanded += ['-t=dnax', '-q=prot']
         args_expanded += ['minIdentity={}'.format(perc_ident), '-out=pslx']
         try:
-            blat_handle = (subprocess.check_output(args_expanded, universal_newlines=True, cwd=BLASTDB))
+            if verbose:
+                print('Running BLAT command:')
+                print(args_expanded)
+            blat = subprocess.Popen(args_expanded, stdout=subprocess.PIPE, universal_newlines=True, cwd=BLASTDB,
+                                    stdin=subprocess.PIPE)
+
+            blat_raw, blat_raw_err = blat.communicate(input=seq_record.format('fasta'))
+            if blat_raw_err:
+                raise Exception(blat_raw_err)
+            head = subprocess.Popen(["head", "-n", "-1"], universal_newlines=True, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE)
+
+            blat_handle = head.communicate(input=blat_raw)
+            if verbose > 2:
+                print(blat_handle[0])
+            if verbose:
+                print('Done!')
             if isinstance(blat_handle, str):
                 blat_result = blat_handle
                 blat_err = None
@@ -464,8 +490,15 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
         except subprocess.CalledProcessError:
             raise
         blast_result, blast_err = blat_result, blat_err
-        search_rec_type = 'blat-psl'
-
+        with StringIO(blast_result) as fin:
+            try:
+                blast_record = SearchIO.read(fin, format='blat-psl', pslx=True)
+            except Exception:
+                with Path('./{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
+                    pslx.write(blast_result)
+                print('Error reading forward BLAT results! Aborting!')
+                print('Error details:\n')
+                raise
     else:
         search_rec_type = 'blast-xml'
         if local_blast:
@@ -523,22 +556,15 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
 
         if verbose:
             print('Done with Blast!')
-    """
-    with StringIO(blast_result) as fin:
-        try:
-            blast_record = SearchIO.read(fin, search_rec_type)
-        except Exception as err:
-            print('Error reading Forward Blast Results! Aborting!')
-            print('Error details:\n', err)
-            raise err
-    """
-    with StringIO(blast_result) as fin:
-        try:
-            blast_record = NCBIXML.read(fin)
-        except Exception as err:
-            print('Error reading Forward Blast Results! Aborting!')
-            print('Error details:\n', err)
-            raise err
+
+        with StringIO(blast_result) as fin:
+            try:
+                blast_record = NCBIXML.read(fin)
+            except Exception as err:
+                print('Error reading Forward Blast Results! Aborting!')
+                print('Error details:\n', err)
+                raise err
+
     if blast_type in ['blat', 'tblat']:
         pass
         # TODO: once I'm more familiar with SearchIO, fill in some of the unknowns like targetdb, etc
@@ -1398,12 +1424,17 @@ class RecBlast(object):
                             str(path.absolute().parent)))
         """
         if blast_type_1 in ['blat', 'tblat']:
+            if verbose >1:
+                print('\t'* level, blast_type_1, ' was selected. Setting fw_blast_db as port:')
             try:
                 fw_blast_db = fw_blast_db[target_species]
+                if verbose >1:
+                    print('\t' * (level+1), str(fw_blast_db))
             except KeyError:
                 print('No port found for species ', target_species)
                 return rc_container_full
-        if fw_blast_db == 'auto':
+
+        elif fw_blast_db == 'auto':
             try:
                 fw_blast_db = get_searchdb(search_type=blast_type_1, species=target_species, db=BLASTDB,
                                            verbose=verbose, level=level + 1)
@@ -1461,8 +1492,8 @@ class RecBlast(object):
             print('\t' * level, 'Forward blast done!')
             print('\t' * level, 'Culling Results based on given criteria...')
         try:
-            f_id_ranked = id_ranker(fwblastrecord, perc_score=perc_score, expect=expect, perc_length=perc_length,
-                                    verbose=verbose)
+            f_id_ranked = id_ranker(fwblastrecord, perc_ident=perc_ident, perc_score=perc_score,
+                                    expect=expect, perc_length=perc_length, verbose=verbose)
         except Exception as err:
             print('WARNING! UNCATCHED ERROR IN ID_RANKER!')
             print(err)
@@ -1606,8 +1637,8 @@ class RecBlast(object):
             if verbose:
                 print('\t' * level, 'Done with Reverse Blast!')
                 print('\t' * level, 'Culling results using given criteria...')
-            reverse_hits = id_ranker(rvblastrecord, perc_score=perc_score, perc_length=perc_length,
-                                     expect=expect, verbose=verbose)
+            reverse_hits = id_ranker(rvblastrecord, perc_ident=perc_ident, perc_score=perc_score,
+                                     perc_length=perc_length, expect=expect, verbose=verbose)
             print(reverse_hits)
             reverse_blast_annotations = ['\t |[ {0} {1} ({2}) ]|'.format(anno[0], anno[1], anno[2]) for anno in
                                          reverse_hits]
@@ -1660,7 +1691,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                host='localhost', user='postgres', driver='psycopg2',
                query_species='Homo sapiens', blast_type_1='blastn', blast_type_2='blastn', local_blast_1=False,
                local_blast_2=False,
-               expect=10, perc_score=0.5, perc_ident=50, perc_length=0.5, megablast=True,
+               expect=10, perc_score=0.5, perc_ident=50, perc_length=0.5, megablast=True, # Todo: change global perc_ident values to use decimal percentages
                email='',
                id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50, passwd='',
                fw_id_db_version='auto', BLASTDB='/usr/db/blastdb',
