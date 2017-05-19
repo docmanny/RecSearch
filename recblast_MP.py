@@ -489,7 +489,7 @@ class RecBlastContainer(dict):
 
 def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blast_type='blastn',
           local_blast=False, expect=0.005, megablast=True, use_index=False, blastoutput_custom="", perc_ident=75,
-          verbose=True, indent=0, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', **blast_kwargs):
+          verbose=True, indent=0, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', out='pslx', **blast_kwargs):
     if isinstance(seq_record, SeqIO.SeqRecord):
         pass
     else:
@@ -533,10 +533,71 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
         blast_result, blast_err = blat_result, blat_err
         with StringIO(blast_result) as fin:
             try:
-                blast_record = SearchIO.read(fin, format='blat-psl', pslx=True)
+                if out == 'pslx':
+                    blast_record = SearchIO.read(fin, format='blat-psl', pslx=True)
+                elif out == 'psl':
+                    blast_record = SearchIO.read(fin, format='blat-psl')
+                elif out == 'blast8':
+                    blast_record = SearchIO.read(fin, format='blast-tab')
+                elif out == 'blast9':
+                    blast_record = SearchIO.read(fin, format='blast-tab', comments=True)
+                elif out == 'blast':
+                    blast_record = SearchIO.read(fin, format='blast-xml')
+                else:
+                    raise Exception('Invalid out type')
             except Exception:
                 with Path('./{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
                     pslx.write(blast_result)
+                print('Error reading forward BLAT results! Aborting!')
+                print('Error details:\n')
+                raise
+    elif blast_type.lower in ['oneshot blat', 'oneshot tblat']:
+        blat_type = blast_type.split(' ')[1]
+        if verbose > 1:
+            print('Search Type: ', blat_type, indent=indent)
+        settings = ['-t=dnax -q=prot -repMatch=2253',
+                    '-stepSize=5 -repMatch=1024 -minScore=0 -minIdentity=0'][blat_type == 'blat']
+        args_expanded = ['blat', settings, str(database), '/', '/dev/stdin', '/dev/stdout', '-out={}'.format(out)]
+        try:
+            if verbose:
+                print('Running BLAT command:', indent=indent)
+                print(''.join(args_expanded), indent=indent + 1)
+            blat = subprocess.Popen(args_expanded, stdout=subprocess.PIPE, universal_newlines=True, cwd=BLASTDB,
+                                    stdin=subprocess.PIPE)
+            blat_raw, blat_raw_err = blat.communicate(input=seq_record.format('fasta'))
+            if blat_raw_err:
+                raise Exception(blat_raw_err)
+            head = subprocess.Popen(["head", "-n", "-1"], universal_newlines=True, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE)
+            blat_handle = head.communicate(input=blat_raw)
+            if verbose > 2:
+                print(blat_handle[0], indent=indent)
+            if verbose:
+                print('Done!', indent=indent)
+            if isinstance(blat_handle, str):
+                blat_result = blat_handle
+                blat_err = None
+            else:
+                blat_result, blat_err = blat_handle
+        except subprocess.CalledProcessError:
+            raise
+        with StringIO(blat_result) as fin:
+            try:
+                if out == 'pslx':
+                    blast_record = SearchIO.read(fin, format='blat-psl', pslx=True)
+                elif out == 'psl':
+                    blast_record = SearchIO.read(fin, format='blat-psl')
+                elif out == 'blast8':
+                    blast_record = SearchIO.read(fin, format='blast-tab')
+                elif out == 'blast9':
+                    blast_record = SearchIO.read(fin, format='blast-tab', comments=True)
+                elif out == 'blast':
+                    blast_record = SearchIO.read(fin, format='blast-xml')
+                else:
+                    raise Exception('Invalid out type')
+            except Exception:
+                with Path('./{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
+                    pslx.write(blat_result)
                 print('Error reading forward BLAT results! Aborting!')
                 print('Error details:\n')
                 raise
@@ -1954,3 +2015,52 @@ def count_dups(recblast_out):
                                 except IndexError:
                                     raise
                             break
+
+def blat(seq_record, target_species, database, blat_type, indent, verbose, out='pslx'):
+    if verbose > 1:
+        print('Search Type: ', blat_type, indent=indent)
+    settings = ['-t=dnax -q=prot -repMatch=2253', '-stepSize=5 -repMatch=1024 -minScore=0 -minIdentity=0'][blat_type == 'blat']
+    args_expanded = ['blat', settings, str(database), '/', '/dev/stdin', '/dev/stdout', '-out={}'.format(out)]
+    try:
+        if verbose:
+            print('Running BLAT command:', indent=indent)
+            print(''.join(args_expanded), indent=indent+1)
+        blat = subprocess.Popen(args_expanded, stdout=subprocess.PIPE, universal_newlines=True, cwd=BLASTDB,
+                                stdin=subprocess.PIPE)
+        blat_raw, blat_raw_err = blat.communicate(input=seq_record.format('fasta'))
+        if blat_raw_err:
+            raise Exception(blat_raw_err)
+        head = subprocess.Popen(["head", "-n", "-1"], universal_newlines=True, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE)
+        blat_handle = head.communicate(input=blat_raw)
+        if verbose > 2:
+            print(blat_handle[0], indent=indent)
+        if verbose:
+            print('Done!', indent=indent)
+        if isinstance(blat_handle, str):
+            blat_result = blat_handle
+            blat_err = None
+        else:
+            blat_result, blat_err = blat_handle
+    except subprocess.CalledProcessError:
+        raise
+    with StringIO(blat_result) as fin:
+        try:
+            if out == 'pslx':
+                blat_record = SearchIO.read(fin, format='blat-psl', pslx=True)
+            elif out == 'psl':
+                blat_record = SearchIO.read(fin, format='blat-psl')
+            elif out == 'blast8':
+                blat_record = SearchIO.read(fin, format='blast-tab')
+            elif out == 'blast9':
+                blat_record = SearchIO.read(fin, format='blast-tab', comments=True)
+            elif out == 'blast':
+                blat_record = SearchIO.read(fin, format='blast-xml')
+            else:
+                raise Exception('Invalid out type')
+        except Exception:
+            with Path('./{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
+                pslx.write(blat_result)
+            print('Error reading forward BLAT results! Aborting!')
+            print('Error details:\n')
+            raise
