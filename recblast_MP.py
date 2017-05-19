@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 from builtins import print as _print
+from contextlib import redirect_stdout
 from datetime import datetime as dt
 from inspect import isgenerator
 from io import StringIO
@@ -19,8 +20,8 @@ from Bio.Blast.Record import Blast as BioBlastRecord
 from BioSQL import BioSeqDatabase
 
 
-def print(*objects, sep=' ', end='\n', file=sys.stdout, flush=False, indent=0, markup=''):
-    _print('\t'*indent, markup, *objects, sep=sep, end=end, file=file, flush=flush)
+def print(*objects, indent=0, markup='', **print_kwargs):
+    _print('\t'*indent, markup, *objects, **print_kwargs)
 
 
 class ProgressBar(object):
@@ -1265,6 +1266,14 @@ class FetchSeq(object):  # The meat of the script
                 print('Done!', indent=indent)
             return seqdict, itemsnotfound
             # SeqIO.write([seqdict[key] for key in seqdict.keys()], str(out_file), output_type)
+        elif source == "2bit":
+            id_list_search = [''.join(i[0:3]) for i in id_list_ids]
+            print(id_list_search)
+            print(seq_range)
+            for i in id_list_search:
+                print(bool(i in seq_range.keys()))
+            # head = subprocess.Popen(["head", "-n", "-1"], universal_newlines=True, stdin=subprocess.PIPE,
+            #                        stdout=subprocess.PIPE)
         else:
             raise Exception('Not a valid database source!')
 
@@ -1413,40 +1422,38 @@ class RecBlastMP_Thread(multiprocessing.Process):
         if self.verbose > 1:
             print(master_out, indent=self.indent)
         master_out_handle = master_out.open('w')
-        old_sysout = sys.__stdout__
-        sys.stdout = master_out_handle
-        while True:
-            rb_instance = self.rb_queue.get()
-            if rb_instance is None:
-                self.rb_queue.task_done()
-                break
-            try:
-                output = rb_instance(fw_blast_db=self.fw_blast_db, BLASTDB=self.BLASTDB,
-                                     infile_type=self.infile_type, output_type=self.output_type,
-                                     query_species=self.query_species,
-                                     blast_type_1=self.blast_type_1, blast_type_2=self.blast_type_2,
-                                     local_blast_1=self.local_blast_1,
-                                     local_blast_2=self.local_blast_2,
-                                     rv_blast_db=self.rv_blast_db, expect=self.expect, perc_score=self.perc_score,
-                                     perc_ident=self.perc_ident,
-                                     perc_length=self.perc_length, megablast=self.megablast, email=self.email,
-                                     id_type=self.id_type,
-                                     fw_source=self.fw_source, fw_id_db=self.fw_id_db, fetch_batch_size=self.batch_size,
-                                     passwd=self.passwd,
-                                     fw_id_db_version=self.fw_id_db_version, verbose=self.verbose, indent=self.indent,
-                                     n_threads=self.n_threads,
-                                     host=self.host,
-                                     user=self.user, driver=self.driver,
-                                     fw_blast_kwargs=self.fw_blast_kwargs, rv_blast_kwargs=self.rv_blast_kwargs,
-                                     proc_id=self.name, write_intermediates=self.write_intermediates,
-                                     )
-                self.rb_queue.task_done()
-                self.rb_results_queue.put(output)
-            except Exception as err:
-                print('Woah! Something went wrong! Aborting!')
-                print('Here\'s the error:\n', err)
-                self.rb_results_queue.put(dict(bla='bla'))
-        sys.stdout = old_sysout
+        with redirect_stdout(master_out_handle):
+            while True:
+                rb_instance = self.rb_queue.get()
+                if rb_instance is None:
+                    self.rb_queue.task_done()
+                    break
+                try:
+                    output = rb_instance(fw_blast_db=self.fw_blast_db, BLASTDB=self.BLASTDB,
+                                         infile_type=self.infile_type, output_type=self.output_type,
+                                         query_species=self.query_species,
+                                         blast_type_1=self.blast_type_1, blast_type_2=self.blast_type_2,
+                                         local_blast_1=self.local_blast_1,
+                                         local_blast_2=self.local_blast_2,
+                                         rv_blast_db=self.rv_blast_db, expect=self.expect, perc_score=self.perc_score,
+                                         perc_ident=self.perc_ident,
+                                         perc_length=self.perc_length, megablast=self.megablast, email=self.email,
+                                         id_type=self.id_type,
+                                         fw_source=self.fw_source, fw_id_db=self.fw_id_db, fetch_batch_size=self.batch_size,
+                                         passwd=self.passwd,
+                                         fw_id_db_version=self.fw_id_db_version, verbose=self.verbose, indent=self.indent,
+                                         n_threads=self.n_threads,
+                                         host=self.host,
+                                         user=self.user, driver=self.driver,
+                                         fw_blast_kwargs=self.fw_blast_kwargs, rv_blast_kwargs=self.rv_blast_kwargs,
+                                         proc_id=self.name, write_intermediates=self.write_intermediates,
+                                         )
+                    self.rb_queue.task_done()
+                    self.rb_results_queue.put(output)
+                except Exception as err:
+                    print('Woah! Something went wrong! Aborting!')
+                    print('Here\'s the error:\n', err)
+                    self.rb_results_queue.put(dict(bla='bla'))
         master_out_handle.close()
         return
 
