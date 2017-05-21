@@ -85,11 +85,11 @@ def percent_identity_searchio(hit, is_protein=True):
     return perc_ident
 
 
-def get_searchdb(search_type, species, db, verbose=True, indent=0):
+def get_searchdb(search_type, species, db_loc, verbose=True, indent=0):
     if verbose:
-        print('Forward Blast DB set to auto, chosing fw_blast_db...', indent=indent)
+        print('Blast DB set to auto, chosing fw_blast_db...', indent=indent)
     if verbose > 1:
-        print('Blast DB location set to: ', db, indent=indent)
+        print('Blast DB location set to: ', db_loc, indent=indent)
     if search_type.lower() in ['blastp', 'blastx', 'tblastx']:
         db_type = 'protein'
     elif search_type.lower() in ['blastn', 'tblastn']:
@@ -101,7 +101,7 @@ def get_searchdb(search_type, species, db, verbose=True, indent=0):
         raise Exception('Improper search type given: ', search_type)
     if verbose > 1:
         print('DB type: ', db_type, indent=indent)
-    db_path = Path(db).absolute()
+    db_path = Path(db_loc).absolute()
     if db_path.exists() and db_path.is_dir():
         if db_type == 'blat':
             glob_path = db_path.glob('{0}*.2bit'.format(species.replace(' ', '_')))
@@ -1210,7 +1210,7 @@ class FetchSeq(object):  # The meat of the script
             return seqdict, itemsnotfound
         elif source == "fasta":  # Note: anecdotally, this doesn't run terribly fast - try to avoid.
             # TODO: have this work like SQL does.
-            
+
             seqdict = SeqIO.index(db, source,
                                   key_function=lambda identifier: p[0].search(
                                       p[2].search(identifier).group()).group())
@@ -1267,13 +1267,40 @@ class FetchSeq(object):  # The meat of the script
             return seqdict, itemsnotfound
             # SeqIO.write([seqdict[key] for key in seqdict.keys()], str(out_file), output_type)
         elif source == "2bit":
-            id_list_search = [''.join(i[0:3]) for i in id_list_ids]
-            print(id_list_search)
-            print(seq_range)
-            for i in id_list_search:
-                print(bool(i in seq_range.keys()))
-            # head = subprocess.Popen(["head", "-n", "-1"], universal_newlines=True, stdin=subprocess.PIPE,
-            #                        stdout=subprocess.PIPE)
+            seqdict = {}
+            itemsnotfound = []
+            id_list = [''.join(i[0:3]) for i in id_list_ids]
+            for id in id_list:
+                try:
+                    id_full = '{0}:{1}-{2}'.format(id, seq_range[id][0], seq_range[id][1])
+                except KeyError:
+                    print(id, "does not have a SeqRange, continuing!", indent=indent)
+                    continue
+                else:
+                    if verbose:
+                        print('Found SeqRange, full id:\t', id_full, indent=indent)
+                    command = ["twoBitToFa", '{0}:{1}'.format(db, id_full), '/dev/stdout']
+                    if verbose > 1:
+                        print('Command:', indent=indent)
+                        print(' '.join(command), indent=indent+1)
+                twoBitToFa_handle= subprocess.check_output(command, universal_newlines=True, stdin=subprocess.PIPE,
+                                                           stderr = subprocess.PIPE)
+                if type(twoBitToFa_handle) is str:
+                    seq_out = twoBitToFa_handle
+                else:
+                    seq_out, seq_err = twoBitToFa_handle
+                    raise Exception(seq_err)
+                if seq_out is not None:
+                    if verbose:
+                        print('Got sequence for ', id_full, indent=indent)
+                    if verbose > 3:
+                        print(seq_out, indent=indent+1)
+                    with StringIO(seq_out) as output:
+                        seqdict[id] = SeqIO.read(output, 'fasta')
+
+                else:
+                    itemsnotfound.append(id)
+            return seqdict, itemsnotfound
         else:
             raise Exception('Not a valid database source!')
 
@@ -1306,7 +1333,7 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
     id_list = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
 
-    if server is None:
+    if server is None and 'sql' in source.lower():
         try:
             if verbose > 1:
                 print('No server received, opening server...', indent=indent)
@@ -1317,12 +1344,14 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
             if verbose > 1:
                 print('FAILED!', indent=indent)
             raise
-    else:
+    elif 'sql' in source.lower():
         if verbose > 1:
             print('Received server handle:', indent=indent)
             print(server, indent=indent)
         if verbose > 2:
             print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
+    elif source.lower() in ['fasta','2bit','twobit']:
+        print('Search type: ', source, indent=indent)
     if verbose > 1:
         print('Creating FecSeq Processes...', indent=indent)
     fs_instances = [FetchSeqMP(id_queue=id_list, seq_out_queue=results,
@@ -1535,7 +1564,7 @@ class RecBlast(object):
 
         elif fw_blast_db == 'auto':
             try:
-                fw_blast_db = get_searchdb(search_type=blast_type_1, species=target_species, db=BLASTDB,
+                fw_blast_db = get_searchdb(search_type=blast_type_1, species=target_species, db_loc=BLASTDB,
                                            verbose=verbose, indent=indent+1)
             except Exception as Err:
                 print(Err)
@@ -1605,9 +1634,25 @@ class RecBlast(object):
         if not f_id_out_list:
             print('Forward Blast yielded no hits, continuing to next sequence!')
             return rc_container_full
+        if blast_type_1.lower() in ['blat', 'tblat'] and fw_id_db == 'auto':
+            if verbose > 1:
+                print('Since blat was selecting, setting fw_id_db equal to fw_blast_db', indent=indent)
+            blat_2bit = get_searchdb(search_type=blast_type_1, species=target_species, db_loc=BLASTDB,
+                                    verbose=verbose, indent=indent+1)
+            fw_id_db = Path(BLASTDB, blat_2bit+'.2bit').absolute()
+            fw_id_db = str(fw_id_db) if fw_id_db.is_file() else None
+            if fw_id_db is None:
+                raise Exception('Invalid 2bit file!')
+            if verbose > 1:
+                print(fw_id_db)
         try:
-            server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd,
-                                                  host=host, db=fw_id_db)
+            if 'sql' in fw_source.lower():
+                server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd,
+                                                      host=host, db=fw_id_db)
+            else:
+                server = None
+            if verbose:
+                print('Beginning Fetchseq!', indent=indent)
             # Note: BioSQL is NOT thread-safe! Throws tons of errors if executed with more than one thread!
             seq_dict, missing_items = fetchseqMP(ids=f_id_out_list, species=target_species, delim='\t',
                                                  id_type='brute', server=server, source=fw_source,
