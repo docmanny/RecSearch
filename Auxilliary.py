@@ -3,6 +3,7 @@ import sys
 from builtins import print as _print
 
 
+
 class ProgressBar(object):
     """Adapted from Romuald Brunet at StackExchange"""
     DEFAULT = 'Progress: %(bar)s %(percent)3d%%'
@@ -91,6 +92,7 @@ def cleanup_fasta_input(handle, filetype='fasta', write=True):
 
 
 def count_dups(recblast_out):
+    from recblast_MP import id_search
     master_dict = {}
     pat = re.compile('\|\[(.*)\]\|')  # regex for items in annotation
 
@@ -142,7 +144,12 @@ def count_dups(recblast_out):
                                                                                                     species,
                                                                                                     gene))
     for species, species_dict in master_dict.items():
-        pass
+        for gene, gene_dict in species_dict.items():
+            for target_id, annotation_list in gene_dict.items():
+                for annotation in annotation_list:
+                    _, id_list_ids, seq_range, _ = id_search(annotation, id_type='brute', verbose=0)
+                    print(id_list_ids)
+
 
 
 

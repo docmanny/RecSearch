@@ -10,6 +10,7 @@ from pathlib import Path
 from time import sleep
 
 import multiprocess as multiprocessing
+#import multiprocessing
 from Bio import SearchIO
 from Bio import SeqIO
 from Bio import __version__ as bp_version
@@ -45,12 +46,12 @@ def percent_identity_searchio(hit, is_protein=True):
 
 def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
     if verbose:
-        print('Blast DB set to auto, chosing fw_blast_db...', indent=indent)
+        print('Blast DB set to auto, choosing blast_db...', indent=indent)
     if verbose > 1:
         print('Blast DB location set to: ', db_loc, indent=indent)
-    if search_type.lower() in ['blastp', 'blastx', 'tblastx']:
+    if search_type.lower() in ['blastp', 'blastx']:
         db_type = 'protein'
-    elif search_type.lower() in ['blastn', 'tblastn']:
+    elif search_type.lower() in ['blastn', 'tblastn', 'tblastx']:
         db_type = 'genome'
     elif search_type.lower() in ['blat', 'tblat', 'translated_blat',
                                  'untranslated_blat', 'oneshot blat', 'oneshot tblat']:
@@ -179,7 +180,7 @@ def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/
                                 universal_newlines=True, shell=True, executable='/bin/bash')
     tries = 0
     while tries < 10:
-        sleep(60)
+        sleep(30)
         gfcheck = subprocess.Popen('gfServer status {0} {1}'.format(str(host), str(port)), stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, universal_newlines=True, shell=True,
                                     executable='/bin/bash')
@@ -485,7 +486,8 @@ class RecBlastContainer(dict):
 
 def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blast_type='blastn',
           local_blast=False, expect=0.005, megablast=True, use_index=False, blastoutput_custom="", perc_ident=75,
-          verbose=True, indent=0, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', out='pslx', **blast_kwargs):
+          verbose=True, indent=0, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', out='pslx', return_raw = False,
+          **blast_kwargs):
     if isinstance(seq_record, SeqIO.SeqRecord):
         pass
     else:
@@ -659,33 +661,25 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
 
         if verbose:
             print('Done with Blast!', indent=indent)
+        if return_raw:
+            return blast_result, blast_err
+        try:
+            with StringIO(blast_result) as fin:
+                try:
+                    blast_record = NCBIXML.read(fin)
+                except Exception as err:
+                    print('Error reading Forward Blast Results! Aborting!', indent=indent)
+                    print('Error details:\n', err, indent=indent)
+                    raise err
+        except TypeError:
+            if isinstance(blast_result, StringIO):
+                blast_record = NCBIXML.read(blast_result)
 
-        with StringIO(blast_result) as fin:
-            try:
-                blast_record = NCBIXML.read(fin)
-            except Exception as err:
-                print('Error reading Forward Blast Results! Aborting!', indent=indent)
-                print('Error details:\n', err, indent=indent)
-                raise err
 
     if blast_type in ['blat', 'tblat']:
         pass
         # TODO: once I'm more familiar with SearchIO, fill in some of the unknowns like targetdb, etc
-    if write:
-        if blastoutput_custom == '':
-            blastoutput_custom = Path("{0}_blast".format(target_species),
-                                      "{0}_{1}_{2}_to_{3}.xml".format(blast_type, seq_record.name,
-                                                                      query_species, target_species)).absolute()
-        else:
-            blastoutput_custom = Path(blastoutput_custom).absolute()
-        try:
-            blastoutput_custom.parent.mkdir(parents=True)
-        except FileExistsError:
-            pass
-        with blastoutput_custom.open("w") as fxml:
-            fxml.write(blast_record)
-    else:
-        return blast_record, blast_err
+    return blast_record, blast_err
 
 
 def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, indent=0, verbose=False):
@@ -1987,20 +1981,22 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                 print(target_species, indent=1)
 
     server_activated = {}
-    if rv_blast_db[query_species] == 'auto':
-        rv_server_online = False
-    else:
-        rv_server_online = blat_server('auto', 'status', host=host, port=rv_blast_db[query_species],
-                                       species=query_species, BLASTDB=BLASTDB, verbose=verbose, indent=1,
-                                       type=blast_type_1)
-    if 'blat' in blast_type_2.lower() and not rv_server_online:
-        rv_blast_db[query_species] = blat_server('auto', 'start', host=host, port=30000, species=query_species,
-                                                 BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_2)
-        server_activated[query_species] = rv_blast_db[query_species]
-    elif 'tblat' in blast_type_2.lower() and not rv_server_online:
-        rv_blast_db[query_species] = blat_server('auto', 'start', host=host, port=30000, species=query_species,
-                                                 BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_2)
-        server_activated[query_species] = rv_blast_db[query_species]
+    if isinstance(rv_blast_db, dict):
+        if rv_blast_db[query_species] == 'auto':
+            rv_server_online = False
+        else:
+            print('Checking status of rv_server')
+            rv_server_online = blat_server('auto', order='status', host=host, port=rv_blast_db[query_species],
+                                           species=query_species, BLASTDB=BLASTDB, verbose=verbose, indent=1,
+                                           type=blast_type_1)
+        if not rv_server_online and 'blat' in blast_type_2.lower():
+            rv_blast_db[query_species] = blat_server('auto', 'start', host=host, port=30000, species=query_species,
+                                                     BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_2)
+            server_activated[query_species] = rv_blast_db[query_species]
+        elif not rv_server_online and 'tblat' in blast_type_2.lower():
+            rv_blast_db[query_species] = blat_server('auto', 'start', host=host, port=30000, species=query_species,
+                                                     BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_2)
+            server_activated[query_species] = rv_blast_db[query_species]
 
     if isinstance(target_species, list):
         for species in target_species:
@@ -2009,11 +2005,11 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
             else:
                 fw_server_online = blat_server('auto','status', host=host, port=fw_blast_db[species], species=species,
                                                BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
-            if 'blat' in blast_type_1.lower() and not fw_server_online:
+            if not fw_server_online and 'blat' in blast_type_1.lower():
                 fw_blast_db[species] = blat_server('auto','start', host=host, port=20000, species=species,
                                                    BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
                 server_activated[species] = fw_blast_db[species]
-            elif 'tblat' in blast_type_1.lower() and not fw_server_online:
+            elif not fw_server_online and 'tblat' in blast_type_1.lower():
                 fw_blast_db[species] = blat_server('auto', 'start', host=host, port=20000, species=species,
                                                    BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
                 server_activated[species] = fw_blast_db[species]
@@ -2025,12 +2021,12 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
             fw_server_online = blat_server('auto', 'status', host=host, port=fw_blast_db[target_species],
                                            species=target_species, BLASTDB=BLASTDB, verbose=verbose, indent=1,
                                            type=blast_type_1)
-        if 'blat' in blast_type_1.lower() and not fw_server_online:
+        if not fw_server_online and 'blat' in blast_type_1.lower():
             fw_blast_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
                                                       species=target_species,
                                                       BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
             server_activated[target_species] = fw_blast_db[target_species]
-        elif 'tblat' in blast_type_1.lower() and not fw_server_online:
+        elif not fw_server_online and 'tblat' in blast_type_1.lower():
             fw_blast_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
                                                       species=target_species,
                                                       BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)

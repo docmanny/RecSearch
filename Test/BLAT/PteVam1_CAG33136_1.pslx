@@ -1,0 +1,6 @@
+psLayout version 3
+
+match	mis- 	rep. 	N's	Q gap	Q gap	T gap	T gap	strand	Q        	Q   	Q    	Q  	T        	T   	T    	T  	block	blockSizes 	qStarts	 tStarts
+     	match	match	   	count	bases	count	bases	      	name     	size	start	end	name     	size	start	end	count
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+147	1	0	0	2	65	4	29745	++	CAG33136.1	230	17	230	scaffold_3138	155727	79925	110114	5	44,28,29,20,27,	17,85,113,183,203,	79925,82929,83419,109323,110033,	QFLKQLGLHPNWQFVDVYGMDPELLSMVPRPVCAVLLLFPITEK,FMKQTISNACGTIGLIHAIANNKDKMHF,ESGSTLKKFLEESVSMSPEERARYLENYD,DGRKPFPINHGETSDETLLE,DAIEVCKKFMERDPDELRFNAIALSAA,	QFLKQLGLHPNWQFVDVYGMDPELLSMVPRPVCAVLLLFPITEK,FMKQTISNACGTIGLIHAIANNKDKMHF,ESGSTLKKFLEESVSMSPEERARYLENYD,DGRKPFPINHGETSDDTLLE,DAIEVCKKFMERDPDELRFNAIALSAA,

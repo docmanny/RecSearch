@@ -1,0 +1,12 @@
+doc-warnings: true
+test-warnings: false
+strictness: veryhigh
+max-line-length: 120
+uses:
+  - biopython
+autodetect: true
+ignore-paths:
+  - docs
+  - Test
+python-targets:
+  - 3
