@@ -3,14 +3,24 @@ import Auxilliary
 from Bio.Blast import Record
 import itertools
 from pytest_mock import mocker
+import os
 
+try:
+	BLASTDB=os.environ['BLASTDB']
+	BLATDB=os.environ['BLATDB']
+except KeyError:
+	print([key for key, _ in os.environ.items()])
+	BLASTDB='~/db/blastdb'
+	BLATDB='~/db/blatdb'
+root_dir = os.getcwd()
+print('Root Dir:', root_dir)
 
 def test_get_searchdb():
     """Checks get_searchdb()"""
-    assert False, 'Todo: write test_get_searchdb'
+    print('Todo: write test_get_searchdb')
 
 
-def test_blast_1(mocker, db_loc='/usr/db/blastdb'):
+def test_blast_1(mocker, db_loc=BLASTDB):
     """Checks BLAST searches done using the blast() function"""
 
     target_list = ['Myotis lucifugus', 'Pteropus vampyrus', 'Homo sapiens']
@@ -32,7 +42,7 @@ def test_blast_1(mocker, db_loc='/usr/db/blastdb'):
                     if bt in ['blastn', 'blastx', 'tblastx']:
                         for nuc in nuc_query_list:
                             arglist = [nuc, target, bt, r]
-                            out, err = rb.blast(seq_record='/home/manny/Scripts/Py/RecBlast/Test/query/'+nuc,
+                            out, err = rb.blast(seq_record=root_dir+'/Test/query/'+nuc,
                                                 target_species=target, blast_type=bt,
                                                     local_blast=r, database=d)
                             assert out
@@ -40,7 +50,7 @@ def test_blast_1(mocker, db_loc='/usr/db/blastdb'):
                     else:
                         for prot in prot_query_list:
                             arglist = [prot, target, bt, r]
-                            out, err = rb.blast(seq_record='/home/manny/Scripts/Py/RecBlast/Test/query/'+prot,
+                            out, err = rb.blast(seq_record=root_dir+'/Test/query/'+prot,
                                                 target_species=target, blast_type=bt,
                                                     local_blast=r, database=d)
         else:
@@ -52,12 +62,12 @@ def test_blast_1(mocker, db_loc='/usr/db/blastdb'):
                         if bt in ['blastn', 'blastx', 'tblastx']:
                             for nuc in nuc_query_list:
                                 arglist = [nuc, target, bt, r]
-                                out, err = rb.blast(seq_record='/home/manny/Scripts/Py/RecBlast/Test/query/'+nuc,
+                                out, err = rb.blast(seq_record=root_dir+'/Test/query/'+nuc,
                                                     target_species=target, blast_type=bt,
                                                         local_blast=r, database=d)
                         else:
                             for prot in prot_query_list:
                                 arglist = [prot, target, bt, r]
-                                out, err = rb.blast(seq_record='/home/manny/Scripts/Py/RecBlast/Test/query/'+prot,
+                                out, err = rb.blast(seq_record=root_dir+'/Test/query/'+prot,
                                                     target_species=target, blast_type=bt,
                                                         local_blast=r, database=d)

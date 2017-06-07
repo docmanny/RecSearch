@@ -62,6 +62,8 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
     if verbose > 1:
         print('DB type: ', db_type, indent=indent)
     db_path = Path(db_loc).absolute()
+    if not db_path.exists():
+        db_path = Path(db_loc)
     if db_path.exists() and db_path.is_dir():
         if db_type == 'blat':
             glob_path = [i for i in db_path.glob('{0}*.2bit'.format(species.replace(' ', '_')))]
