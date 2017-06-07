@@ -10,7 +10,7 @@ from pathlib import Path
 from time import sleep
 
 import multiprocess as multiprocessing
-#import multiprocessing
+# import multiprocessing
 from Bio import SearchIO
 from Bio import SeqIO
 from Bio import __version__ as bp_version
@@ -2153,7 +2153,7 @@ def recblast_write(rc_container, verbose=1, outfolder=None):
                         with recblast_output.open('w') as rc_out:
                             SeqIO.write(recblast_sequence, rc_out, 'fasta')
 
-
+"""
 def blat(seq_record, target_species, database, blat_type, indent, BLASTDB, verbose, out='pslx'):
     if verbose > 1:
         print('Search Type: ', blat_type, indent=indent)
@@ -2203,3 +2203,69 @@ def blat(seq_record, target_species, database, blat_type, indent, BLASTDB, verbo
             print('Error reading forward BLAT results! Aborting!')
             print('Error details:\n')
             raise
+"""
+
+class RecBlastControl(object):
+    def __init__(self, file, header=True):
+        self.options_list = []
+        self.file = Path(file)
+        self.header = header
+        try:
+            self.file.exists()
+            self.file.is_file()
+        except Exception:
+            raise
+        if self.header == True:
+            skip_first_line = True
+        else:
+            skip_first_line = False
+        with self.file.open() as ctl_file:
+            tmplines = [line.rstrip() for line in ctl_file.readlines()]
+        if tmplines == []:
+            raise Exception('No lines in temlines!')
+        for line in tmplines:
+            if skip_first_line:
+                skip_first_line = False
+                continue
+            options = [opt.split(',') if len(opt.split(',')) > 1 else opt for opt in line.split('\t')]
+            self.options_list += dict(seqfile = options[0],
+                                      target_species = options[1],
+                                      fw_blast_db = options[2],
+                                      rv_blast_db = options[3],
+                                      infile_type = options[4],
+                                      output_type = options[5],
+                                      host = options[6],
+                                      user = options[7],
+                                      driver = options[8],
+                                      query_species = options[9],
+                                      blast_type_1 = options[10],
+                                      blast_type_2 = options[11],
+                                      local_blast_1 = options[12],
+                                      local_blast_2 = options[13],
+                                      expect = options[14],
+                                      perc_score = options[15],
+                                      perc_ident = options[16],
+                                      perc_length = options[17],
+                                      megablast = options[18],
+                                      email = options[19],
+                                      id_type = options[20],
+                                      fw_source = options[21],
+                                      fw_id_db = options[22],
+                                      fetch_batch_size = options[23],
+                                      passwd = options[24],
+                                      fw_id_db_version = options[25],
+                                      BLASTDB = options[26],
+                                      indent = options[27],
+                                      verbose = options[28],
+                                      max_n_processes = options[29],
+                                      n_threads = options[30],
+                                      write_intermediates = options[31],
+                                      write_final = options[32],
+                                      fw_blast_kwargs = options[33],
+                                      rv_blast_kwargs = options[34]
+                                 )
+    def __str__(self):
+        for index, options in enumerate(self.options_list):
+            print('Run {}:'.format(index))
+            for key, item in options.items():
+                print(key, item, sep='\t', indent=1)
