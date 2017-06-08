@@ -1,6 +1,7 @@
 import logging
 import re
 import subprocess
+from collections import OrderedDict
 from contextlib import redirect_stdout
 from datetime import datetime as dt
 from inspect import isgenerator
@@ -17,6 +18,7 @@ from Bio import __version__ as bp_version
 from Bio.Blast import NCBIXML, NCBIWWW
 from Bio.Blast.Record import Blast as BioBlastRecord
 from BioSQL import BioSeqDatabase
+from BioSQL.BioSeq import DBSeqRecord
 
 from Auxilliary import print, ProgressBar, merge_ranges
 
@@ -403,6 +405,7 @@ def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
     """
     from Bio.SeqRecord import SeqRecord
     from Bio.Seq import Seq
+    assert isinstance(DBSeqRecord_, DBSeqRecord), 'Input must be a DBSeqRecord!'
     if off:
         return DBSeqRecord_
     else:
@@ -2227,45 +2230,63 @@ class RecBlastControl(object):
             if skip_first_line:
                 skip_first_line = False
                 continue
+            elif line[0] == "#":
+                continue
             options = [opt.split(',') if len(opt.split(',')) > 1 else opt for opt in line.split('\t')]
-            self.options_list += dict(seqfile = options[0],
-                                      target_species = options[1],
-                                      fw_blast_db = options[2],
-                                      rv_blast_db = options[3],
-                                      infile_type = options[4],
-                                      output_type = options[5],
-                                      host = options[6],
-                                      user = options[7],
-                                      driver = options[8],
-                                      query_species = options[9],
-                                      blast_type_1 = options[10],
-                                      blast_type_2 = options[11],
-                                      local_blast_1 = options[12],
-                                      local_blast_2 = options[13],
-                                      expect = options[14],
-                                      perc_score = options[15],
-                                      perc_ident = options[16],
-                                      perc_length = options[17],
-                                      megablast = options[18],
-                                      email = options[19],
-                                      id_type = options[20],
-                                      fw_source = options[21],
-                                      fw_id_db = options[22],
-                                      fetch_batch_size = options[23],
-                                      passwd = options[24],
-                                      fw_id_db_version = options[25],
-                                      BLASTDB = options[26],
-                                      indent = options[27],
-                                      verbose = options[28],
-                                      max_n_processes = options[29],
-                                      n_threads = options[30],
-                                      write_intermediates = options[31],
-                                      write_final = options[32],
-                                      fw_blast_kwargs = options[33],
-                                      rv_blast_kwargs = options[34]
-                                 )
+            self.options_list.append(OrderedDict(seqfile=options[0],
+                                                 target_species=options[1],
+                                                 fw_blast_db=options[2] if options[2] != '*' else 'auto',
+                                                 rv_blast_db=options[3] if options[3] != '*' else 'auto',
+                                                 infile_type=options[4] if options[4] != '*' else 'fasta',
+                                                 output_type=options[5] if options[5] != '*' else 'fasta',
+                                                 host=options[6] if options[6] != '*' else 'localhost',
+                                                 user=options[7] if options[7] != '*' else 'postgres',
+                                                 driver=options[8] if options[8] != '*' else 'psycopg2',
+                                                 query_species=options[9] if options[9] != '*' else 'Homo sapiens',
+                                                 blast_type_1=options[10] if options[10] != '*' else 'blastn',
+                                                 blast_type_2=options[11] if options[11] != '*' else 'blastn',
+                                                 local_blast_1=options[12] if options[12] != '*' else False,
+                                                 local_blast_2=options[13] if options[13] != '*' else False,
+                                                 expect=options[14] if options[14] != '*' else 10,
+                                                 perc_score=options[15] if options[15] != '*' else 0.5,
+                                                 perc_ident=options[16] if options[16] != '*' else 50,
+                                                 perc_length=options[17] if options[17] != '*' else 0.5,
+                                                 megablast=options[18] if options[18] != '*' else True,
+                                                 email=options[19] if options[19] != '*' else '',
+                                                 id_type=options[20] if options[20] != '*' else 'brute',
+                                                 fw_source=options[21] if options[21] != '*' else 'sql',
+                                                 fw_id_db=options[22] if options[22] != '*' else 'bioseqdb',
+                                                 fetch_batch_size=options[23] if options[23] != '*' else 50,
+                                                 passwd=options[24] if options[24] != '*' else '',
+                                                 fw_id_db_version=options[25] if options[25] != '*' else 'auto',
+                                                 BLASTDB=options[26] if options[26] != '*' else '/usr/db/blastdb',
+                                                 indent=options[27] if options[27] != '*' else 0,
+                                                 verbose=options[28] if options[28] != '*' else 'v',
+                                                 max_n_processes=options[29] if options[29] != '*' else 'auto',
+                                                 n_threads=options[30] if options[30] != '*' else 2,
+                                                 write_intermediates=options[31] if options[31] != '*' else False,
+                                                 write_final=options[32] if options[32] != '*' else True,
+                                                 fw_blast_kwargs=options[33] if options[33] != '*' else None,
+                                                 rv_blast_kwargs=options[34] if options[34] != '*' else None,
+                                                 ))
+
     def __str__(self):
+        tmp = ''
         for index, options in enumerate(self.options_list):
-            print('Run {}:'.format(index))
+            tmp += 'Run {}:\n'.format(index+1)
+            tmp += '\tKeyword\tValue\n\t'
+            tmp += '_'*7 + '\t' + '_'*5 + '\n'
             for key, item in options.items():
-                print(key, item, sep='\t', indent=1)
+                tmp += '\t{0}\t{1}'.format(key, item)
+                tmp += '\n'
+        return tmp
+
+    def __call__(self):
+        rc_all = []
+        for options in self.options_list:
+            try:
+                rc_all += recblastMP(**options)
+            except Exception as err:
+                print(err)
+                continue
+        return rc_all
