@@ -11,12 +11,13 @@ from pathlib import Path
 from time import sleep
 
 import multiprocess as multiprocessing
-# import multiprocessing
-from Bio import SearchIO
-from Bio import SeqIO
+from Bio import SearchIO, SeqIO
 from Bio import __version__ as bp_version
 from Bio.Blast import NCBIXML, NCBIWWW
 from Bio.Blast.Record import Blast as BioBlastRecord
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+# import multiprocessing
 from BioSQL import BioSeqDatabase
 from BioSQL.BioSeq import DBSeqRecord
 
@@ -403,8 +404,6 @@ def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
     :param DBSeqRecord_:
     :return:
     """
-    from Bio.SeqRecord import SeqRecord
-    from Bio.Seq import Seq
     assert isinstance(DBSeqRecord_, DBSeqRecord), 'Input must be a DBSeqRecord!'
     if off:
         return DBSeqRecord_
@@ -500,7 +499,7 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
     args = dict()
     if verbose:
         print("Now starting BLAST...", indent=indent)
-
+    blast_record, blast_err = 0, 0
     if blast_type.lower() in ['blat', 'tblat']:
         if verbose > 1:
             print('Search Type: ', blast_type, indent=indent)
@@ -684,7 +683,10 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
     if blast_type in ['blat', 'tblat']:
         pass
         # TODO: once I'm more familiar with SearchIO, fill in some of the unknowns like targetdb, etc
-    return blast_record, blast_err
+    if blast_record == 0:
+        raise Exception('blast_record was not set!')
+    else:
+        return blast_record, blast_err
 
 
 def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, indent=0, verbose=False):
