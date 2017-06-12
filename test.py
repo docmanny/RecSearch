@@ -1,4 +1,5 @@
 import os
+from io import StringIO
 
 import pytest
 from Bio.Blast.Record import Blast as BioBlastRecord
@@ -131,33 +132,53 @@ class Test_Blast(object):
                        local_blast=i[3],
                        query_species=i[5])
                   ) for i in full_list]"""
-    scenarios =[('blastp-CDN1B.faprt-Myotis_lucifugus-remote-refseq_protein-Homo_sapiens',
+    """('blastp-CDN1B.faprt-Myotis_lucifugus-remote-refseq_protein-Homo_sapiens',
                  {'blast_type': 'blastp',
                   'database': 'refseq_protein',
                   'local_blast': False,
                   'query_species': 'Homo sapiens',
                   'seq_record': 'Test/query/CDN1B.faprt',
-                  'target_species': 'Myotis lucifugus'}),
-                ('blastp-CDN1B.faprt-Myotis_lucifugus-local-Myotis_lucifugus_protein_v2.0.fa-Homo_sapiens',
-                 {'blast_type': 'blastp',
-                  'database': 'Myotis_lucifugus_protein_v2.0.fa',
+                  'target_species': 'Myotis lucifugus'}),"""
+    scenarios = [('tblastn-CDN1B.faprt-Myotis_lucifugus-local-Myotis_lucifugus_protein_v2.0.fa-Homo_sapiens',
+                 {'blast_type': 'tblastn',
+                  'database': 'Myotis_lucifugus_genome_v2.0.fa',
                   'local_blast': True,
                   'query_species': 'Homo sapiens',
-                  'seq_record': 'Test/query/CDN1B.faprt',
+                  'seq_record': 'CDN1B.faprt',
                   'target_species': 'Myotis lucifugus'})
                 ]
     @pytest.mark.long
     def test_search_remote_real(self, seq_record, target_species, database, query_species, blast_type, local_blast,
                                 BLASTDB=globals()['BLASTDB']):
-        results, err = rb.blast(seq_record=seq_record, target_species=target_species, database=database,
+        results, err = rb.blast(seq_record='Test/query/{}'.format(seq_record), target_species=target_species, database=database,
                                 query_species=query_species, blast_type=blast_type, local_blast=local_blast,
                                 BLASTDB=BLASTDB)
         assert isinstance(results, BioBlastRecord)
         assert err == '' or err == [] or err == None
 
-    def test_search_local_mocked(self, seq_record, target_species, database, query_species, blast_type, local_blast,
-                               BLASTDB=globals()['BLASTDB']):
-        pass
+    def test_search_local_mocked(self, mocker, seq_record, target_species, database, query_species, blast_type,
+                                 local_blast, BLASTDB=globals()['BLASTDB']):
+
+        file_handle = 'Test/BLAST/'
+        file_handle += '{blast_type}_{local_blast}_'.format(blast_type=blast_type,
+                                                            local_blast='Local' if local_blast  else 'Remote')
+        file_handle += '{query_species}_{target_species}_{seq_record}.xml'.format(query_species=query_species,
+                                                                                  target_species=target_species,
+                                                                                  seq_record=seq_record.split('.fa')[0])
+        file_handle = file_handle.replace(' ', '_')
+        with open(file_handle) as fin:
+            mockingbird = fin.readlines()
+        if not local_blast:
+            mockingbird = StringIO(mockingbird)
+
+        mocker.patch('recblast_MP.subprocess.Popen', return_value=(mockingbird, None))
+        mocker.patch('recblast_MP.subprocess.check_output', return_value=(mockingbird, None))
+        mocker.patch('recblast_MP.NCBIWWW.qblast', return_value=mockingbird)
+        results, err = rb.blast(seq_record='Test/query/{}'.format(seq_record), target_species=target_species,
+                                database=database, query_species=query_species, blast_type=blast_type,
+                                local_blast=local_blast, BLASTDB=BLASTDB)
+        assert isinstance(results, BioBlastRecord)
+        assert err == '' or err == [] or err == None
 
 
 class Test_biosql_seq_lookup_cascade(object):
@@ -183,23 +204,35 @@ class Test_biosql_get_record_mp(object):
 class Test_id_search(object):
     scenarios = [('', {})]
 
-    def test_id(self):
-        pass
+    def test_id(self, id, id_type):
+        if id_type == 'id':
+            pass
+        else:
+            pass
 
-    def test_gi(self):
-        pass
+    def test_gi(self, id, id_type):
+        if id_type == 'gi':
+            pass
+        else:
+            pass
 
-    def test_accession(self):
-        pass
+    def test_accession(self, id, id_type):
+        if id_type == 'accession':
+            pass
+        else:
+            pass
 
-    def test_chr(self):
-        pass
+    def test_chr(self, id, id_type):
+        if id_type == 'chr':
+            pass
+        else:
+            pass
 
-    def test_scaffold(self):
-        pass
-
-    def test_seqrange(self):
-        pass
+    def test_scaffold(self, id, id_type):
+        if id_type == 'scaffold':
+            pass
+        else:
+            pass
 
 
 class Test_FetchSeqMP(object):
@@ -218,7 +251,44 @@ class Test_fetchseqMP(object):
 
 
 class Test_RecBlastMP_Thread(object):
-    scenarios = [('', {})]
+    full_list = []
+    scenarios = [('',
+                  dict(seqfile=i[0],
+                       target_species=i[1],
+                       fw_blast_db=i[2],
+                       rv_blast_db=i[3],
+                       infile_type=i[4],
+                       output_type=i[5],
+                       host=i[6],
+                       user=i[7],
+                       driver=i[8],
+                       query_species=i[9],
+                       blast_type_1=i[10],
+                       blast_type_2=i[11],
+                       local_blast_1=i[12],
+                       local_blast_2=i[13],
+                       expect=i[14],
+                       perc_score=i[15],
+                       perc_ident=i[16],
+                       perc_length=i[17],
+                       megablast=i[18],
+                       email=i[19],
+                       id_type=i[20],
+                       fw_source=i[21],
+                       fw_id_db=i[22],
+                       fetch_batch_size=i[23],
+                       passwd=i[24],
+                       fw_id_db_version=i[25],
+                       BLASTDB=i[26],
+                       indent=i[27],
+                       verbose=i[28],
+                       max_n_processes=i[29],
+                       n_threads=i[30],
+                       write_intermediates=i[31],
+                       write_final=i[32],
+                       fw_blast_kwargs=i[33],
+                       rv_blast_kwargs=i[34])
+                  ) for i in full_list]
     pass
 
 
