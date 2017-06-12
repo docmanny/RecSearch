@@ -1,6 +1,7 @@
 import logging
 import re
 import subprocess
+import sys
 from collections import OrderedDict
 from contextlib import redirect_stdout
 from datetime import datetime as dt
@@ -499,7 +500,7 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
     args = dict()
     if verbose:
         print("Now starting BLAST...", indent=indent)
-    blast_record, blast_err = 0, 0
+
     if blast_type.lower() in ['blat', 'tblat']:
         if verbose > 1:
             print('Search Type: ', blast_type, indent=indent)
@@ -663,30 +664,27 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
                 print(err)
                 raise err
 
+        print(blast_result)
+        print(blast_err)
         if verbose:
             print('Done with Blast!', indent=indent)
         if return_raw:
             return blast_result, blast_err
-        try:
-            with StringIO(blast_result) as fin:
+        if isinstance(blast_result, StringIO):
+            blast_record = NCBIXML.read(blast_result)
+        else:
+            with StringIO(''.join(blast_result)) as fin:
                 try:
                     blast_record = NCBIXML.read(fin)
                 except Exception as err:
                     print('Error reading Forward Blast Results! Aborting!', indent=indent)
                     print('Error details:\n', err, indent=indent)
                     raise err
-        except TypeError:
-            if isinstance(blast_result, StringIO):
-                blast_record = NCBIXML.read(blast_result)
-
 
     if blast_type in ['blat', 'tblat']:
         pass
         # TODO: once I'm more familiar with SearchIO, fill in some of the unknowns like targetdb, etc
-    if blast_record == 0:
-        raise Exception('blast_record was not set!')
-    else:
-        return blast_record, blast_err
+    return blast_record, blast_err
 
 
 def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, indent=0, verbose=False):
@@ -1751,20 +1749,25 @@ class RecBlast(object):
                      ))
             if verbose:
                 print('Performing Reverse Blast:', indent=indent)
-            if blast_type_1 in ['blat', 'tblat']:
+            if blast_type_2 in ['blat', 'tblat']:
                 try:
-                    rv_blast_db = rv_blast_db[query_species]
+                    print('A', file=sys.stderr)
+                    rv_blast_db_i = rv_blast_db[query_species]
+                    print('B', file=sys.stderr)
                 except KeyError:
                     print('No port found for species ', query_species)
                     return rc_container_full
             if (rv_blast_db == 'auto') | (rv_blast_db == 'auto-transcript'):
                 try:
-                    rv_blast_db = get_searchdb(search_type=blast_type_2, species=target_species, db=BLASTDB,
-                                               verbose=verbose, indent=indent+1)
+                    print('???', file=sys.stderr)
+                    rv_blast_db_i = get_searchdb(search_type=blast_type_2, species=target_species, db=BLASTDB,
+                                                 verbose=verbose, indent=indent+1)
                 except Exception as Err:
                     print(Err)
                     return rc_container_full
+            print('C', file=sys.stderr)
             rv_blast = rc_container['reverse_blast']
+            print('D', file=sys.stderr)
             if rv_blast_db == 'skip':
                 pass
             elif rv_blast_db == 'stop':
@@ -1777,12 +1780,12 @@ class RecBlast(object):
                           indent=indent)
                 rv_blat_2bit = get_searchdb(search_type=blast_type_2, species=query_species, db_loc=BLASTDB,
                                             verbose=verbose, indent=indent + 1)
-                rv_blast_db = Path(BLASTDB, rv_blat_2bit + '.2bit').absolute()
-                rv_blast_db = str(rv_blast_db) if rv_blast_db.is_file() else None
-                if rv_blast_db is None:
+                rv_blast_db_i = Path(BLASTDB, rv_blat_2bit + '.2bit').absolute()
+                rv_blast_db_i = str(rv_blast_db_i) if rv_blast_db_i.is_file() else None
+                if rv_blast_db_i is None:
                     raise Exception('Invalid 2bit file!')
                 if verbose > 1:
-                    print('rv_blast_db: ', rv_blast_db, indent=indent + 1)
+                    print('rv_blast_db: ', rv_blast_db_i, indent=indent + 1)
             else:
                 try:
                     if rv_blast_kwargs:
@@ -1791,7 +1794,7 @@ class RecBlast(object):
                                 print("Reverse BLAST keywords:", indent=indent+1)
                                 print(key, '\t', item, indent=indent+2)
                         rvblastrecord, blast_err = blast(seq_record=entry_record, target_species=target_species,
-                                                         database=rv_blast_db, query_species=query_species,
+                                                         database=rv_blast_db_i, query_species=query_species,
                                                          filetype=infile_type, BLASTDB=BLASTDB,
                                                          blast_type=blast_type_2, local_blast=local_blast_2,
                                                          expect=expect, n_threads=n_threads,
@@ -1804,7 +1807,7 @@ class RecBlast(object):
                                                          **rv_blast_kwargs)
                     else:
                         rvblastrecord, blast_err = blast(seq_record=entry_record, target_species=target_species,
-                                                         database=rv_blast_db, query_species=query_species,
+                                                         database=rv_blast_db_i, query_species=query_species,
                                                          filetype=infile_type, BLASTDB=BLASTDB,
                                                          blast_type=blast_type_2, local_blast=local_blast_2,
                                                          expect=expect, n_threads=n_threads, indent=indent+1,
