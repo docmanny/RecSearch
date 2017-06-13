@@ -1506,7 +1506,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
                 except Exception as err:
                     print('Woah! Something went wrong! Aborting!')
                     print('Here\'s the error:\n', err)
-                    self.rb_results_queue.put(dict(bla='bla'))
+                    self.rb_results_queue.put(dict(empty=err))
         master_out_handle.close()
         return
 

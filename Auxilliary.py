@@ -91,64 +91,150 @@ def cleanup_fasta_input(handle, filetype='fasta', write=True):
     return newlist
 
 
-def count_dups(recblast_out):
-    from recblast_MP import id_search
-    master_dict = {}
-    pat = re.compile('\|\[(.*)\]\|')  # regex for items in annotation
+def simple_struct(recblast_out, verbose=True):
+    """Returns a nice diagram of queries, targets, and annotations"""
 
-    for rc in recblast_out:
+    from recblast_MP import id_search, RecBlastContainer
+    master_dict = {}
+    pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
+    if isinstance(recblast_out, list):
+        # Prepare a list of dictionaries of length recblast_out, along with a list of respective species
+        master_count = [dict] * len(recblast_out)
+
+        for index, rc in enumerate(recblast_out):
+            master_count[index] = simple_struct(rc)
+        for subdict in master_count:
+            for species, species_dict in subdict.items():
+                try:
+                    comb_spec_dict = master_dict[species]
+                except KeyError:
+                    master_dict[species] = dict()
+                    comb_spec_dict = master_dict[species]
+                for query, query_dict in species_dict.items():
+                    try:
+                        comb_query_dict = comb_spec_dict[query]
+                    except KeyError:
+                        comb_spec_dict[query] = dict()
+                        comb_query_dict = comb_spec_dict[query]
+                    for target_id, annotation_list in query_dict.items():
+                        try:
+                            comb_anno_list = comb_query_dict[target_id]
+                        except KeyError:
+                            comb_query_dict[target_id] = list()
+                            comb_anno_list = comb_query_dict[target_id]
+                        comb_anno_list += annotation_list
+        return master_dict
+
+    else:
+        """
+        Structure:
+            master_dict:
+                Species|    species_dict:
+                                Query|  query_dict:
+                                            target_id|  annotations_list
+        """
+        assert isinstance(recblast_out, RecBlastContainer), 'Item in recblast_out was not a RecBlastContainer object!'
         try:
-            rc.__delitem__('__dict__')
+            recblast_out.__delitem__('__dict__')
         except KeyError:
             pass
-        for species, rc_spec_rec in rc.items():
-            print('Species:\t', species, indent=0)
+        for species, rc_spec_rec in recblast_out.items():
+            #print('Species:\t', species, indent=0)
             try:
                 species_dict = master_dict[species]
             except KeyError:
                 master_dict[species] = dict()
                 species_dict = master_dict[species]
-            for gene, rc_rec in rc_spec_rec.items():
-                print('Gene:\t' ,gene, indent=1)
+            for query, rc_rec in rc_spec_rec.items():
+                #print('Query:\t', query, indent=1)
                 try:
-                    gene_dict = species_dict[gene]
+                    query_dict = species_dict[query]
                 except KeyError:
-                    species_dict[gene] = dict()
-                    gene_dict = species_dict[gene]
+                    species_dict[query] = dict()
+                    query_dict = species_dict[query]
                 try:
                     rc_out = rc_rec['recblast_results']
                 except KeyError:
-                    print('No entries in recblast_results for query {0} in species {1}'.format(gene, species))
+                    print('No entries in recblast_results for query {0} in species {1}'.format(query, species))
                     continue
                 for record in rc_out:
                     try:
-                        print(record.description, indent=3)
+                        #print(record.description, indent=3)
                         target_id, annotations = record.description.split('|-|')
-                        print(target_id, indent=4)
-                        print(annotations.lstrip('\t'), indent=4)
+                        #print('Target ID:\t', target_id, indent=4)
+                        #print('Annotations:', annotations.lstrip('\t'), indent=4)
                     except ValueError:
                         print(record.description, indent=2)
-                        print('Could not unpack annotations!', indent=2)
+                        #print('Could not unpack annotations!', indent=2)
                         continue
                     try:
-                        target_list = gene_dict[target_id]
+                        target_list = query_dict[target_id]
                     except KeyError:
-                        gene_dict[target_id] = list()
-                        target_list = gene_dict[target_id]
+                        query_dict[target_id] = list()
+                        target_list = query_dict[target_id]
                     id_lst = pat.findall(annotations)
-                    print(id_lst, indent=4)
+                    #print('id_list:\t', id_lst, indent=4)
                     if id_lst:
                         target_list += id_lst
                     else:
-                        print('No annotations found for record {0} in species {1}, gene {2}'.format(record.name,
-                                                                                                    species,
-                                                                                                    gene))
+                        print('No annotations found for record {0} in species {1}, query {2}'.format(record.name,
+                                                                                                     species,
+                                                                                                     query))
+        if verbose:
+            print('*******************************************')
+            for species, species_dict in master_dict.items():
+                print(species, indent=0)
+                for query, query_dict in species_dict.items():
+                    print(query, indent=1)
+                    for target_id, annotation_list in query_dict.items():
+                        print(target_id, indent=2)
+                        query_dict[target_id] = [''.join(id_search(annotation, id_type='brute', verbose=0)[1][0])
+                                                 for annotation in annotation_list]
+                        for annotation in query_dict[target_id]:
+                            print(annotation, indent=3)
+            print('*******************************************')
+        return master_dict
+
+
+def count_dups(recblast_out):
+    """ Inverts target-annotation dictionary to find out, for every best-hit annotation, how many targets there are"""
+    species_anno_target_dict = {}
+    species_anno_count_dict = {}
+    master_dict = simple_struct(recblast_out, verbose=False)
+
     for species, species_dict in master_dict.items():
-        for gene, gene_dict in species_dict.items():
-            for target_id, annotation_list in gene_dict.items():
-                for annotation in annotation_list:
-                    _, id_list_ids, seq_range, _ = id_search(annotation, id_type='brute', verbose=0)
-                    print(id_list_ids)
+        try:
+            anno_target_dict = species_anno_target_dict[species]
+        except KeyError:
+            species_anno_target_dict[species] = {}
+            anno_target_dict = species_anno_target_dict[species]
+        print(species_dict, indent=0)
+        for query, query_dict in species_dict.items():
+            # ignoring query
+            print(query_dict, indent=1)
+            for target_id, annotation_list in query_dict.items():
+                print(annotation_list, indent=2)
+                tophit = annotation_list[0]
+                print(tophit, indent=2)
+                try:
+                    anno_target_dict[tophit] += target_id
+                except KeyError:
+                    anno_target_dict[tophit] = list()
+                    anno_target_dict[tophit].append(target_id)
+                print(anno_target_dict[tophit], indent=3)
+    for species, anno_dict in species_anno_target_dict.items():
+        print(species, indent=0)
+        try:
+            anno_count_dict = species_anno_count_dict[species]
+        except KeyError:
+            species_anno_count_dict[species] = {}
+            anno_count_dict = species_anno_count_dict[species]
+        for annotation, target_list in anno_dict.items():
+            print(annotation, '\t\t\t', len(target_list))
+            anno_count_dict[annotation] = len(target_list)
+    return species_anno_target_dict, species_anno_count_dict
+
+
 
 
 

@@ -7,6 +7,7 @@ from Bio.SeqRecord import SeqRecord
 # from pytest_mock import mocker
 from BioSQL.BioSeq import DBSeqRecord
 
+import Auxilliary as aux
 import recblast_MP as rb
 
 try:
@@ -305,3 +306,30 @@ class Test_recblastMP(object):
 class Test_RecBlastControl(object):
     scenarios = [('', {})]
     pass
+
+
+class Test_count_dups(object):
+    scenarios = [('Not a RecBlastContainer', {'rc_out': [dict()],
+                                              'empirical_count': None}),
+                 ('Empty RBC',{'rc_out': rb.RecBlastContainer(target_species=None,query_record=SeqRecord(name='',
+                                                                                                         seq='')),
+                               'empirical_count': {'': 0}}),
+                 ('', {}),
+                 ('', {}),
+                 ('', {}),]
+    pass
+
+    def test_input(self, rc_out, empirical_count):
+        if isinstance(rc_out, rb.RecBlastContainer):
+            pass
+        else:
+            pytest.raises(AssertionError, message='Expecting AssertionError: '
+                                                  'Item in recblast_out was not a RecBlastContainer object!')
+
+    def test_count_dups(self, rc_out, empirical_count):
+        if empirical_count is None:
+            pass
+        else:
+            count_dict = aux.count_dups(rc_out)
+        if
+
