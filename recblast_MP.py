@@ -1,7 +1,6 @@
 import logging
 import re
 import subprocess
-import sys
 from collections import OrderedDict
 from contextlib import redirect_stdout
 from datetime import datetime as dt
@@ -60,6 +59,8 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
     elif search_type.lower() in ['blat', 'tblat', 'translated_blat',
                                  'untranslated_blat', 'oneshot blat', 'oneshot tblat']:
         db_type = 'blat'
+    elif search_type.lower() in ['blat-transcript']:
+        db_type = ('blat', 'transcript')
     else:
         print('Unable to determing blast db type!', indent=indent)
         raise Exception('Improper search type given: ', search_type)
@@ -71,6 +72,8 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
     if db_path.exists() and db_path.is_dir():
         if db_type == 'blat':
             glob_path = [i for i in db_path.glob('{0}*.2bit'.format(species.replace(' ', '_')))]
+        elif db_type == 'blat-transcript':
+            glob_path = [i for i in db_path.glob('{0}*transcript.2bit'.format(species.replace(' ', '_')))]
         else:
             glob_path = [i for i in db_path.glob('{0}_{1}*'.format(species.replace(' ', '_'), db_type))]
         if glob_path == []:
@@ -84,6 +87,8 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
                 print('RegEx species abbreviation: ', species_abbv_insensitive, indent=indent)
             if db_type == 'blat':
                 glob_path = [i for i in db_path.glob('{0}*.2bit'.format(species_abbv_insensitive))]
+            elif db_type == 'blat-transcript':
+                glob_path = [i for i in db_path.glob('{0}*transcript.2bit'.format(species_abbv_insensitive))]
             else:
                 glob_path = [i for i in db_path.glob('{0}_{1}*'.format(species_abbv_insensitive, db_type))]
         try:
@@ -501,7 +506,7 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
     if verbose:
         print("Now starting BLAST...", indent=indent)
 
-    if blast_type.lower() in ['blat', 'tblat']:
+    if blast_type.lower() in ['blat', 'tblat', 'blat-transcript']:
         if verbose > 1:
             print('Search Type: ', blast_type, indent=indent)
         args_expanded = ['gfClient', 'localhost', str(database), '/', '/dev/stdin', '/dev/stdout']
@@ -1749,25 +1754,20 @@ class RecBlast(object):
                      ))
             if verbose:
                 print('Performing Reverse Blast:', indent=indent)
-            if blast_type_2 in ['blat', 'tblat']:
+            if blast_type_2 in ['blat', 'tblat', 'blat-transcript']:
                 try:
-                    print('A', file=sys.stderr)
                     rv_blast_db_i = rv_blast_db[query_species]
-                    print('B', file=sys.stderr)
                 except KeyError:
                     print('No port found for species ', query_species)
                     return rc_container_full
             if (rv_blast_db == 'auto') | (rv_blast_db == 'auto-transcript'):
                 try:
-                    print('???', file=sys.stderr)
                     rv_blast_db_i = get_searchdb(search_type=blast_type_2, species=target_species, db=BLASTDB,
                                                  verbose=verbose, indent=indent+1)
                 except Exception as Err:
                     print(Err)
                     return rc_container_full
-            print('C', file=sys.stderr)
             rv_blast = rc_container['reverse_blast']
-            print('D', file=sys.stderr)
             if rv_blast_db == 'skip':
                 pass
             elif rv_blast_db == 'stop':
@@ -1956,7 +1956,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
         print('CPU count: ', max_n_processes)
     if n_jobs * n_threads > max_n_processes:
         print('Optimal number of processes would be above max limit, using limit instead!')
-        n_processes = max_n_processes / n_threads
+        n_processes = int(max_n_processes / n_threads)
     else:
         n_processes = n_jobs
         if verbose:
@@ -1977,7 +1977,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
     if blast_type_1.lower() in ['blat', 'tblat']:
         assert isinstance(fw_blast_db, dict), "For BLAT searches, fw_blast_db must be a dictionary with " \
                                               "valid species-port key pairs"
-    if blast_type_2.lower() in ['blat', 'tblat']:
+    if blast_type_2.lower() in ['blat', 'tblat', 'blat-transcript']:
         assert isinstance(rv_blast_db, dict), "For BLAT searches, rv_blast_db must be a dictionary with " \
                                               "valid species-port key pairs"
 

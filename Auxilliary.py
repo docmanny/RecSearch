@@ -91,6 +91,34 @@ def cleanup_fasta_input(handle, filetype='fasta', write=True):
     return newlist
 
 
+def nr_by_longest(handle, filetype='fasta', write=True):
+    from Bio import SeqIO
+    oldlist = SeqIO.parse(handle, filetype)
+    seqdict = {}
+    for seq in oldlist:
+        if seq.seq == 'Sequenceunavailable':
+            print('Seq Unavailable:\t', seq.name)
+            continue
+        seq.id, seq.description = seq.id.split('|')[0], seq.id.split('|')[1]
+        assert seq.id != 'gi' or seq.id != 'emb' or seq.id != 'acc'
+        if seq.id in seqdict:
+            if len(seq)>len(seqdict[seq.id]):
+                seqdict[seq.id] = seq
+            else:
+                continue
+        else:
+            seqdict[seq.id] = seq
+    newlist = []
+    for key, seq in seqdict.items():
+        newlist.append(seq)
+    if write:
+        from pathlib import Path
+        outhandle = 'nr_' + str(Path(handle).name)
+        with Path(outhandle).open('w') as outf:
+            SeqIO.write(newlist, outf, filetype)
+    return newlist
+
+
 def simple_struct(recblast_out, verbose=True):
     """Returns a nice diagram of queries, targets, and annotations"""
 
@@ -217,7 +245,7 @@ def count_dups(recblast_out):
                 tophit = annotation_list[0]
                 print(tophit, indent=2)
                 try:
-                    anno_target_dict[tophit] += target_id
+                    anno_target_dict[tophit] += [target_id]
                 except KeyError:
                     anno_target_dict[tophit] = list()
                     anno_target_dict[tophit].append(target_id)
