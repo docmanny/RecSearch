@@ -2,3 +2,4 @@
 dill>=0.2.6
 multiprocess
 pytest_mock
+mygene

@@ -21,7 +21,7 @@ from Bio.SeqRecord import SeqRecord
 from BioSQL import BioSeqDatabase
 from BioSQL.BioSeq import DBSeqRecord
 
-from Auxilliary import print, ProgressBar, merge_ranges
+from Auxilliary import print, ProgressBar, merge_ranges, translate_annotation
 
 
 def percent_identity_searchio(hit, is_protein=True):
@@ -554,7 +554,7 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
                 else:
                     raise Exception('Invalid out type')
             except Exception:
-                with Path('./{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
+                with Path('./blaterr/{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
                     pslx.write(blast_result)
                 print('Error reading forward BLAT results! Aborting!')
                 print('Error details:\n')
@@ -917,6 +917,7 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
          re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for generic ID
          re.compile('(chr)([| :_]?)(\D*\d+\.?\d*)(.*)'),    # regex for chr
          re.compile(':(\d+)-(\d+)'),  # regex for sequence range
+         re.compile('(\S+)(.*)'), # regex for gene symbol
          ]
 
     id_list_ids = []  # Initialized list of IDs
@@ -947,6 +948,10 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
             id_type = 'chr'
             if verbose > 1:
                 print(p[4].findall(id_rec))
+        elif bool(p[6].findall(id_rec)):
+            id_type = 'symbol'
+            if verbose > 1:
+                print(p[6].findall(id_rec))
         else:
             raise Exception('Couldn\'t identify the id!')
         if verbose > 1:
@@ -1029,6 +1034,22 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
             id_list_ids.append(item_parts[0][0:3])
             if bool(p[5].findall(id_rec)):
                 seq_range[''.join(p[4].findall(id_rec)[0][0:3])] = p[5].findall(id_rec)[0]
+                if verbose > 1:
+                    print('Found sequence delimiters in IDs!', indent=indent)
+    elif id_type == 'symbol':
+        if bool(p[6].findall(id_rec)):
+            found_id = True
+            if verbose > 1:
+                print('Successfully found ID numbers, compiling list!', indent=indent)
+            item_parts = p[6].findall(id_rec)
+            if verbose > 1:
+                print('Item:\t', item_parts, indent=indent)
+                print(item_parts[0])
+                for i, item in enumerate(item_parts[0]):
+                    print(i, item)
+            id_list_ids.append(item_parts[0][0:3])
+            if bool(p[5].findall(id_rec)):
+                seq_range[''.join(p[6].findall(id_rec)[0][0:3])] = p[5].findall(id_rec)[0]
                 if verbose > 1:
                     print('Found sequence delimiters in IDs!', indent=indent)
     else:
@@ -1838,8 +1859,8 @@ class RecBlast(object):
                 continue
             print('Reverse BLAST hits:', indent=indent+1)
             print(reverse_hits, indent=indent+2)
-            reverse_blast_annotations = ['\t |[ {0} {1} ({2}) ]|'.format(anno[0], anno[1], anno[2]) for anno in
-                                         reverse_hits]
+            reverse_blast_annotations = ['\t |[ {0} {1} ({2}) ]|'.format(translate_annotation(anno[0]), anno[1],
+                                                                         anno[2]) for anno in reverse_hits]
             if not reverse_blast_annotations:
                 print('No Reverse Blast Hits were found for this hit!', indent=indent+1)
                 print('Continuing to next Sequence!', indent=indent+1)

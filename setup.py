@@ -7,5 +7,5 @@ setup(name='recblast_MP',
       author='Juan Manuel Vazquez',
       author_email='juan@vazquez.bio',
       url='https://www.vazquez.bio/RecBlast',
-      install_requires=['biopython>=1.69', 'dill', 'multiprocess'],
+      install_requires=['biopython>=1.69', 'dill>=0.2.6', 'multiprocess', 'mygene'],
       py_modules=['recblast_MP','Auxilliary', 'test'])

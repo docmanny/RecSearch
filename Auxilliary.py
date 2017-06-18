@@ -2,6 +2,7 @@ import re
 import sys
 from builtins import print as _print
 
+import mygene
 
 
 class ProgressBar(object):
@@ -91,15 +92,36 @@ def cleanup_fasta_input(handle, filetype='fasta', write=True):
     return newlist
 
 
+def translate_annotation(annotation, orig='refseq', to='symbol', species='human'):
+    """
+    Converts a name from one type to another using mygene.
+    :param annotation: 
+    :param orig: 
+    :param to: 
+    :return: 
+    """
+    mg = mygene.MyGeneInfo()
+    out = mg.querymany(annotation, scopes=orig, fields=to, species=species)
+    try:
+        trans = out[0]
+        return trans['symbol']
+    except KeyError:
+        raise Exception('No symbol found for {}'.format(annotation))
+
+
 def nr_by_longest(handle, filetype='fasta', write=True):
     from Bio import SeqIO
     oldlist = SeqIO.parse(handle, filetype)
     seqdict = {}
+
     for seq in oldlist:
         if seq.seq == 'Sequenceunavailable':
             print('Seq Unavailable:\t', seq.name)
             continue
-        seq.id, seq.description = seq.id.split('|')[0], seq.id.split('|')[1]
+        try:
+            seq.id, seq.description = seq.id.split('|')[0], seq.id.split('|')[1]
+        except IndexError:
+            seq.id, seq.description = seq.id.split(' ')[0], ''.join(seq.id.split('|')[1:len(seq.id.split('|'))])
         assert seq.id != 'gi' or seq.id != 'emb' or seq.id != 'acc'
         if seq.id in seqdict:
             if len(seq)>len(seqdict[seq.id]):
@@ -108,15 +130,65 @@ def nr_by_longest(handle, filetype='fasta', write=True):
                 continue
         else:
             seqdict[seq.id] = seq
-    newlist = []
-    for key, seq in seqdict.items():
-        newlist.append(seq)
+    newlist = (seq for _, seq in seqdict.items())
     if write:
         from pathlib import Path
         outhandle = 'nr_' + str(Path(handle).name)
         with Path(outhandle).open('w') as outf:
             SeqIO.write(newlist, outf, filetype)
     return newlist
+
+
+def cull_reciprocal_best_hit(recblast_out):
+    """
+    returns a recblast_out container that only has the reciprocal best hits.
+    :param recblast_out: 
+    :return: 
+    """
+    pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
+    if isinstance(recblast_out, list):
+        rc_out_list = []
+        for index, rc in enumerate(recblast_out):
+            rc_out_list.append(cull_reciprocal_best_hit(rc))
+        return rc_out_list
+    else:
+        #assert isinstance(recblast_out, RecBlastContainer), "Items must be RecBlastContainer Objects!"
+        for species, rc_spec_rec in recblast_out.items():
+            #print('Species:\t', species, indent=0)
+            for query, rc_rec in rc_spec_rec.items():
+                #print('Query:\t', query, indent=1)
+                try:
+                    rc_out = rc_rec['recblast_results']
+                except KeyError:
+                    print('No entries in recblast_results for query {0} in species {1}'.format(query, species))
+                    continue
+                tmprecord = []
+                for record in rc_out:
+                    try:
+                        #print(record.description, indent=3)
+                        target_id, annotations = record.description.split('|-|')
+                        #print('Target ID:\t', target_id, indent=4)
+                        #print('Annotations:', annotations.lstrip('\t'), indent=4)
+                    except ValueError:
+                        print(record.description, indent=2)
+                        print('Could not unpack annotations!', indent=2)
+                        continue
+                    id_lst = pat.findall(annotations)
+                    #print('id_list:\t', id_lst, indent=4)
+                    if id_lst:
+                        if query in id_lst[0]:
+                            tmprecord.append(record)
+                        else:
+                            print("For query {0}, target {1} was not a reciprocal best hit!".format(query,
+                                                                                                    target_id))
+                            continue
+                    else:
+                        print('No annotations found for record {0} in species {1}, query {2}'.format(record.name,
+                                                                                                     species,
+                                                                                                     query))
+                        continue
+                recblast_out[species][query]['recblast_results'] = tmprecord
+        return recblast_out
 
 
 def simple_struct(recblast_out, verbose=True):
@@ -216,12 +288,51 @@ def simple_struct(recblast_out, verbose=True):
                     print(query, indent=1)
                     for target_id, annotation_list in query_dict.items():
                         print(target_id, indent=2)
-                        query_dict[target_id] = [''.join(id_search(annotation, id_type='brute', verbose=0)[1][0])
-                                                 for annotation in annotation_list]
+                        tmp = []
+                        for annotation in annotation_list:
+                            p, id_list_ids, seq_range, id_type = id_search(annotation, id_type='brute', verbose=0)
+                            if id_type == 'symbol':
+                                tmp.append(''.join(id_list_ids[0][0]))
+                            else:
+                                tmp.append(''.join(id_list_ids[0]))
+                        query_dict[target_id] = tmp
                         for annotation in query_dict[target_id]:
                             print(annotation, indent=3)
             print('*******************************************')
         return master_dict
+
+
+def rc_out_stats(rc_out):
+    from recblast_MP import RecBlastContainer
+    if isinstance(rc_out, list):
+        holder =[]
+        for rc in rc_out:
+            holder.append(rc_out_stats(rc))
+        c_hit_list, c_multihit_list = zip(holder)
+        hit_perc = sum(c_hit_list)/len(c_hit_list)
+        multihit_perc = sum(c_multihit_list)/len(c_multihit_list)
+
+    # Percentage of searches with reciprocal hits, regardless of number:
+    # Percentage of searches with more than one hit:
+    elif isinstance(rc_out, RecBlastContainer):
+        c_hit = 0
+        c_multihit = 0
+        for species, queries_dict in rc_out.items():
+            for query, results in rc_out.items():
+                try:
+                    record_list = results['recblast_results']
+                except KeyError:
+                    return (0, 0)
+                has_run = 0
+                for record in record_list:
+                    if not has_run:
+                        c_hit += 1
+                        has_run = 0
+                    c_multihit += 1
+
+    else:
+        return None
+
 
 
 def count_dups(recblast_out):
