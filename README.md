@@ -1,5 +1,5 @@
----
----
+[![DOI](https://zenodo.org/badge/82135779.svg)](https://zenodo.org/badge/latestdoi/82135779)
+
 
 RecBlast
 ========
@@ -82,4 +82,3 @@ TODO: add more detail here?
   - [Debated] Use hub-and-spoke model to coordinate all searches in a
 single SearchMaster Process
   - [VX.x] Tools to use to analyze output
-

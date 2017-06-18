@@ -101,4 +101,5 @@ tmp/
 etc/
 Myotis*/
 recblasttest_*/
-
+blaterr/
+.idea/

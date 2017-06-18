@@ -3,7 +3,7 @@
 
 RecBlast
 ========
-
+[![DOI](https://zenodo.org/badge/82135779.svg)](https://zenodo.org/badge/latestdoi/82135779)
 Recblast is a module containing functions that can do Reciprocal-Best-Hit-BLAST
 for a given list of sequences between a query species, and a list of target species.
 Unlike other implementations of Reciprocal-Best-Hit-BLAST, RecBlast is designed to
@@ -70,16 +70,11 @@ both the Forward and Reverse BLAST calls take a dictionary parameter,
 fw_blast_kwargs and rv_blast_kwargs, respectively, that can be used to
 modify the two searches independently.
 
-TODO: add more detail here?
 
 <br>
 
 ### ___Roadmap:___
 ----------------------
 
-  - [V1.5] Entrez implementation for remote sequence searches
-  - [V2.0] BLAT compatibility
-  - [Debated] Use hub-and-spoke model to coordinate all searches in a
-single SearchMaster Process
-  - [VX.x] Tools to use to analyze output
-
+  - Entrez implementation for remote sequence searches
+  - Additional tools for analyzing output
