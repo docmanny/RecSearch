@@ -11,12 +11,12 @@ import Auxilliary as aux
 import recblast_MP as rb
 
 try:
-    BLASTDB=os.environ['BLASTDB']
-    BLATDB=os.environ['BLATDB']
+    BLASTDB = os.environ['BLASTDB']
+    BLATDB = os.environ['BLATDB']
 except KeyError:
     print([key for key, _ in os.environ.items()])
-    BLASTDB='~/db/blastdb'
-    BLATDB='~/db/blatdb'
+    BLASTDB = '~/db/blastdb'
+    BLATDB = '~/db/blatdb'
 root_dir = os.getcwd()
 print('Root Dir:', root_dir)
 
@@ -71,9 +71,9 @@ class Test_biosql_get_sub_db_names(object):
 class Test_biosql_DBSeqRecord_to_SeqRecord(object):
     """Class containing all tests related to biosql_DBSeqRecord_to_SeqRecord"""
     scenarios = [('InRecord = SeqRecord', {'inrecord': SeqRecord(seq='AATTGGCC', id='test'),
-                                          'off': False}),
+                                           'off': False}),
                  ('InRecord = DBSeqRecord; no conversion', {'inrecord': DBSeqRecord,
-                                                           'off' : True}),
+                                                            'off': True}),
                  ('InRecord = DBSeqRecord; yes conversion', {'inrecord': DBSeqRecord,
                                                              'off': False}),
                  ('InRecord = str', {'inrecord': str,
@@ -147,22 +147,24 @@ class Test_Blast(object):
                   'query_species': 'Homo sapiens',
                   'seq_record': 'CDN1B.faprt',
                   'target_species': 'Myotis lucifugus'})
-                ]
+                 ]
+
     @pytest.mark.long
     def test_search_remote_real(self, seq_record, target_species, database, query_species, blast_type, local_blast,
                                 BLASTDB=globals()['BLASTDB']):
-        results, err = rb.blast(seq_record='Test/query/{}'.format(seq_record), target_species=target_species, database=database,
+        results, err = rb.blast(seq_record='Test/query/{}'.format(seq_record), target_species=target_species,
+                                database=database,
                                 query_species=query_species, blast_type=blast_type, local_blast=local_blast,
                                 BLASTDB=BLASTDB)
         assert isinstance(results, BioBlastRecord)
-        assert err == '' or err == [] or err == None
+        assert err == '' or err == [] or err is None
 
     def test_search_local_mocked(self, mocker, seq_record, target_species, database, query_species, blast_type,
                                  local_blast, BLASTDB=globals()['BLASTDB']):
 
         file_handle = 'Test/BLAST/'
         file_handle += '{blast_type}_{local_blast}_'.format(blast_type=blast_type,
-                                                            local_blast='Local' if local_blast  else 'Remote')
+                                                            local_blast='Local' if local_blast else 'Remote')
         file_handle += '{query_species}_{target_species}_{seq_record}.xml'.format(query_species=query_species,
                                                                                   target_species=target_species,
                                                                                   seq_record=seq_record.split('.fa')[0])
@@ -179,7 +181,7 @@ class Test_Blast(object):
                                 database=database, query_species=query_species, blast_type=blast_type,
                                 local_blast=local_blast, BLASTDB=BLASTDB)
         assert isinstance(results, BioBlastRecord)
-        assert err == '' or err == [] or err == None
+        assert err == '' or err == [] or err is None
 
 
 class Test_biosql_seq_lookup_cascade(object):
@@ -311,12 +313,12 @@ class Test_RecBlastControl(object):
 class Test_count_dups(object):
     scenarios = [('Not a RecBlastContainer', {'rc_out': [dict()],
                                               'empirical_count': None}),
-                 ('Empty RBC',{'rc_out': rb.RecBlastContainer(target_species=None,query_record=SeqRecord(name='',
-                                                                                                         seq='')),
-                               'empirical_count': {'': 0}}),
+                 ('Empty RBC', {'rc_out': rb.RecBlastContainer(target_species=None,
+                                                               query_record=SeqRecord(name='', seq='')),
+                                'empirical_count': {'': 0}}),
                  ('', {}),
                  ('', {}),
-                 ('', {}),]
+                 ('', {})]
     pass
 
     def test_input(self, rc_out, empirical_count):
@@ -331,5 +333,4 @@ class Test_count_dups(object):
             pass
         else:
             count_dict = aux.count_dups(rc_out)
-        if
-
+        pass
