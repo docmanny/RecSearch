@@ -24,7 +24,8 @@ from BioSQL.BioSeq import DBSeqRecord
 from Auxilliary import print, ProgressBar, merge_ranges, translate_annotation
 
 
-def percent_identity_searchio(hit, is_protein=True):
+def _percent_identity_searchio(hit, is_protein=True):
+    """Calculates percent identity based on entire hit. Adapted from UCSC BLAT FAQ and Biopython."""
     from math import log
     size_mul = 3 if is_protein else 1
     qali_size = size_mul * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
@@ -48,14 +49,52 @@ def percent_identity_searchio(hit, is_protein=True):
 
 
 def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
+    """Finds and returns the appropriate search database for the given species and search type.
+
+    This function automates the process of selecting the search database needed by the selected search program,
+    like BLAST or BLAT, so that the user does not need to preoccupy themselves with providing said information
+    for a large number of species. For BLAST* that depend on protein databases (BLASTP and BLASTX), the function
+    searches for files matching the form 'Genus_species_protein.*' in the given directory; for BLAST* that depend
+    on DNA databases (BLASTN, TBLASTN, and TBLASTX), it instead looks for files 'Genus_species_genome.*'.
+    If '-transcript' is added to the end of any of the DNA-dependent BLAST*, then instead the function will
+    search for files in the style of 'Genus_species_transcript.*'. In the case of BLAT searches, the program will
+    similarly search for 'Genus_species*.2bit', or for 'Genus_species*transcript.2bit' if '-transcript' is added
+    after the search type.
+    In all usage cases, if the program does not find files matching the 'Genus_species' format, it will try to
+    find the files using a case-insensitive search using the 6-letter abbreviated form of the species name.
+
+    Usage::
+    >>> get_searchdb('blastp', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/Homo_Sapiens_protein.*
+    >>> get_searchdb('tblastn', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap_genome.*
+    >>> get_searchdb('blastn-transcript', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap_transcript.*
+    >>> get_searchdb('blat', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap.2bit
+    >>> get_searchdb('blat-transcript', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap_transcript.2bit
+
+    Arguments::
+    :param str search_type: The name of the search method (blast or blat, and sub-type: blastp, blastn, blat, tblat...)
+    :param str species: Name of species associated with the database. If there is a space, it will be replaced with an
+    underscore.
+    :param str db_loc: Path to folder containing collection of search databases.
+    :param int verbose: How verbose should the output be. Zero suppresses all output, 2 is max verbosity.
+    :param int indent: Indent level for printed output.
+    :return str:  Path to the identified search database.
+    """
     if verbose:
         print('Blast DB set to auto, choosing blast_db...', indent=indent)
+    species = species.replace(' ', '_')
     if verbose > 1:
         print('Blast DB location set to: ', db_loc, indent=indent)
     if search_type.lower() in ['blastp', 'blastx']:
         db_type = 'protein'
     elif search_type.lower() in ['blastn', 'tblastn', 'tblastx']:
         db_type = 'genome'
+    elif search_type.lower() in ['blastn-transcript', 'tblastn-transcript', 'tblastx-transcript']:
+        db_type = 'transcript'
     elif search_type.lower() in ['blat', 'tblat', 'translated_blat',
                                  'untranslated_blat', 'oneshot blat', 'oneshot tblat']:
         db_type = 'blat'
@@ -135,10 +174,63 @@ def nuc_to_prot_compare(prot_sub, nuc_query, perc_ident, perc_length, trans_tabl
 """
 
 
-def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/dev/null', species=None,
-                BLASTDB='/usr/db/blat', verbose = 1, indent=0, **gfserver_kwargs):
+def blat_server(twobit, order='start', host='localhost', port=20000, type='blat', log='/dev/null', species=None,
+                BLASTDB='/usr/db/blat', verbose = 1, indent=0, try_limit=10, **gfserver_kwargs):
+    """Convenience function that controls a gfServer. Still in alpha.
+
+    This function serves as a python wrapper for the Bash gfServer command. The user can either provide a .2bit file,
+    or else can provide a species and set 'twobit="auto"' to have the function use 'get_searchdb()' to find a .2bit file
+    automatically. By default, the function is set to start up a new gfServer instance, but using the 'order' parameter,
+    the user can execute any of the standard gfServer commands such as 'stop' and 'status'.
+    To start a gfServer, the function first probes the selected port (default is 20000) to ensure its unused; if it is
+    currently in use, the program then goes port-by-port in ascending order until it finds an empty port to use for the
+    server. Then, it simply calls the gfServer command with all the keyword arguments required, as well as with any
+    extra arguments provided by the user.
+
+    Usage::
+    >>>blat_server(twobit='hg38.2bit', port=20000, verbose=3)
+    gfServer start localhost 20001 -canStop -stepSize=5 hg38.2bit
+    # Waits 30 seconds, then starts calling 'gfServer status localhost 20001' every 30 seconds for 5 minutes
+    # If at any point 'gfServer status' returns something that is not an error or "Couldn't connect...", it
+    # returns the port where the server was opened.
+    20001
+    >>>blat_server(twobit='auto', port=20000, species='Homo sapiens', verbose=3)
+    # Calls get_searchdb('blat', 'Homo sapiens', db_loc=BLATDB)
+    # Internally, will return a .2bit file such as 'Homo_sapiens.2bit'
+    20001
+    >>>blat_server(twobit='hg38.2bit', port=20000, order='status', verbose=3)
+    # If the server is active:
+    1
+    >>>blat_server(twobit='hg38.2bit', port=20000, order='status', verbose=3)
+    # If the server either has not been started or is not yet active:
+    0
+    >>>blat_server(twobit='hg38.2bit', port=20000, order='status', verbose=3)
+    # If the server returns an error
+    Exception(...)
+
+
+    :param str twobit: A path to the .2bit file to be used for the server. Can also be set to 'auto'.
+    :param str order: A command for gfServer. Can be one of the following: start, stop, status, files, query (requires
+    a nucleotide sequence in fasta format), protQuery (requires a protein sequence in fasta format), transQuery
+    (requires a nucleotide sequence in fasta format), pcr (requires arguments fPrimer, rPrimer, maxDistance), direct
+    (requires probe.fa, file(s).nib), or pcrDirect (requires fPrimer, rPrimer, file(s).nib).
+    :param str host: Address at which to host the server.
+    :param int port: Port number that will be assigned to server. If in use, will test new port number in increments of
+    1 until a free port is found.
+    :param str type: Type of server to be hosted. 'blat' will start a DNA server, 'tblat' will start a DNAX server for
+    protein queries.
+    :param str log: Path and name of log file to be written.
+    :param str species: Species name that get_searchdb() will use to find .2bit file when twobit='auto'.
+    :param str BLASTDB: Path to the folder containing .2bit file.
+    :param int verbose: Level of verbosity of function output. 0 suppresses all output, 3 is max verbosity.
+    :param int indent: Indentation level of print output.
+    :param int try_limit: Number of tries at 30-second intervals that function should probe the gfServer before timeout.
+    :param gfserver_kwargs: keyword arguments to be passed on to gfServer.
+    :return: if order='start', returns the port of the new gfServer; if order='status', returns 0 if there was no
+    connection, or 1 if the server is active and responding.
+    """
     # Regular: gfServer start localhost portX -stepSize=5 -log=untrans.log database.2bit
-    # Prot>DNA:  gfServer start localhost portY -trans -mask -log=trans.log database.2bit
+    # Prot>DNAX:  gfServer start localhost portY -trans -mask -log=trans.log database.2bit
     gfserver_suppl_args = list()
     if twobit == 'auto' and order != 'stop':
         if verbose:
@@ -174,7 +266,7 @@ def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/
                               stderr=subprocess.STDOUT, universal_newlines=True, shell=True,
                               executable='/bin/bash')
         return
-
+    #Todo: make the portsniffer its own function and make sure it works properly.
     portfinder = subprocess.check_output('/home/manny/Scripts/oneshot/checkifportisopen.sh {}'.format(str(port)),
                                          universal_newlines=True, shell=True, executable='/bin/bash')
     port = portfinder.rstrip()
@@ -192,7 +284,7 @@ def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/
     subprocess.Popen(gfserver_cmd_str, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 universal_newlines=True, shell=True, executable='/bin/bash')
     tries = 0
-    while tries < 10:
+    while tries <= try_limit:
         sleep(30)
         gfcheck = subprocess.Popen('gfServer status {0} {1}'.format(str(host), str(port)), stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, universal_newlines=True, shell=True,
@@ -208,7 +300,7 @@ def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/
             if verbose:
                 print(out)
             return port
-    if tries >= 10:
+    if tries > try_limit:
         raise Exception('Timed out!')
 
 
@@ -257,7 +349,7 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
                         ]) >= perc_length * top_length
 
         def hit_perc_id(hit):
-            #return percent_identity_searchio(hit) >= perc_ident
+            #return _percent_identity_searchio(hit) >= perc_ident
             return True
 
         def hit_hsp_span(hit):
@@ -290,7 +382,7 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
                 score = sum([hsp.score for hsp in hit.hsps])
                 length = sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end)
                                                                    for hsp in hit])])
-                ident = percent_identity_searchio(hit)
+                ident = _percent_identity_searchio(hit)
                 span = [hsp.hit_span for hsp in hit]
                 print('{HitName}\t|\t{Score}\t|\t{Length}\t|\t{PIdent}\t|\t{span_list}\t|'.format(HitName=name,
                                                                                                       Score=score,
@@ -475,8 +567,7 @@ def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
 
 
 class RecBlastContainer(dict):
-    """RecBlastContainer class containing all intermediary and final RecBlast outputs.
-    """
+    """RecBlastContainer class containing all intermediary and final RecBlast outputs."""
     def __init__(self, target_species, query_record):
         super(dict, self).__init__()
         assert isinstance(query_record, SeqIO.SeqRecord), "Query Record MUST be a SeqRecord!"
