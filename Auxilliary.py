@@ -142,8 +142,8 @@ def nr_by_longest(handle, filetype='fasta', write=True):
 def cull_reciprocal_best_hit(recblast_out):
     """
     returns a recblast_out container that only has the reciprocal best hits.
-    :param recblast_out: 
-    :return: 
+    :param recblast_out:
+    :return:
     """
     pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
     if isinstance(recblast_out, list):
@@ -202,9 +202,14 @@ def simple_struct(recblast_out, verbose=True):
         master_count = [dict] * len(recblast_out)
 
         for index, rc in enumerate(recblast_out):
-            master_count[index] = simple_struct(rc)
+            try:
+                master_count[index] = simple_struct(rc)
+            except AttributeError:
+                master_count[index] = rc
         for subdict in master_count:
             for species, species_dict in subdict.items():
+                if isinstance(species_dict, Exception):
+                    continue
                 try:
                     comb_spec_dict = master_dict[species]
                 except KeyError:
@@ -222,7 +227,7 @@ def simple_struct(recblast_out, verbose=True):
                         except KeyError:
                             comb_query_dict[target_id] = list()
                             comb_anno_list = comb_query_dict[target_id]
-                        comb_anno_list += annotation_list
+                        comb_anno_list += annotation_list if isinstance(annotation_list, list) else [annotation_list]
         return master_dict
 
     else:
@@ -233,7 +238,7 @@ def simple_struct(recblast_out, verbose=True):
                                 Query|  query_dict:
                                             target_id|  annotations_list
         """
-        assert isinstance(recblast_out, RecBlastContainer), 'Item in recblast_out was not a RecBlastContainer object!'
+        #assert isinstance(recblast_out, RecBlastContainer), 'Item in recblast_out was not a RecBlastContainer object!'
         try:
             recblast_out.__delitem__('__dict__')
         except KeyError:
@@ -304,6 +309,7 @@ def simple_struct(recblast_out, verbose=True):
 
 def rc_out_stats(rc_out):
     from recblast_MP import RecBlastContainer
+    # Todo: use 'from Collections import Counter' to rapidly count duplicates
     if isinstance(rc_out, list):
         holder =[]
         for rc in rc_out:
