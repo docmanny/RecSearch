@@ -1,6 +1,6 @@
 [![DOI](https://zenodo.org/badge/82135779.svg)](https://zenodo.org/badge/latestdoi/82135779)
-[![GitHub release](https://img.shields.io/github/release/qubyte/rubidium.svg)]()
-[![Travis](https://img.shields.io/travis/rust-lang/rust.svg)]()
+[![GitHub release](https://img.shields.io/github/release/docmanny/RecBlast.svg)]()
+[![Build Status](https://travis-ci.org/docmanny/RecBlast.svg?branch=master)](https://travis-ci.org/docmanny/RecBlast)
 
 RecBlast
 ========
