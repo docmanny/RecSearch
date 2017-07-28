@@ -1,5 +1,6 @@
 [![DOI](https://zenodo.org/badge/82135779.svg)](https://zenodo.org/badge/latestdoi/82135779)
-
+[![GitHub release](https://img.shields.io/github/release/qubyte/rubidium.svg)]()
+[![Travis](https://img.shields.io/travis/rust-lang/rust.svg)]()
 
 RecBlast
 ========
@@ -7,32 +8,45 @@ RecBlast
 Recblast is a module containing functions that can do Reciprocal-Best-Hit-BLAST
 for a given list of sequences between a query species, and a list of target species.
 Unlike other implementations of Reciprocal-Best-Hit-BLAST, RecBlast is designed to
-be flexible in its functionality. Rather than simply identifying a lone reciprocal
-best-hit, RecBlast compiles all hits above a set of given criteria in order of
-descending scores, and then annotates them with a list of reciprocal BLAST hits
-that were compiled and sorted in the same fashion.
+be flexible in its functionality; the function provides a variety of
+changable parameters for filtering and annotating hits, allowing one
+to either perform a exclusive best-hit annotation of all forward hits,
+or else annotating all forward hits with a list of ranked reciprocal hits
+that meet the specified criteria.
 
-Additionally, RecBlast is designed to be flexible in how it goes about performing
-the searches; in its final form, RecBlast will be able to not only use BLAST,
-but will also be able to use BLAT and other custom programs, either locally or
-on remote servers.
+RecBlast is also designed to use either BLAST or BLAT as the search algorithm, and
+allows mixing and matching of various different search types. The query sequences
+can be either protein or nucleotide queries, and one can specify forward searches
+against either protein, nucleotide, translated protein, or translated nucleotide
+databases by specifying what kind of BLAST or BLAT search one wishes to employ;
+in the reverse direction, one can also perform the reciprocal search with either
+of the two algorithms, and against any kind of database one wishes given the output
+type (either protein or nucelotide) of the first search.
 
-  (NOTE: As of the latest release, V1.0, RecBlastMP is the main module containing
-the function recblastmp(), that can perform the Reciprocal-BLASTs in a
-parallel fashion. Recblast.py should not be used, and instead,
-RecBlastMP should be used with n_processes = 1 if one desires a
-single-process version of the script.)
+The program is designed to automate much of the argument selection, with functions
+to automatically select the correct database files for search algorithms and sequence
+acquisition based on the selected search types and sequence selection. Finally, the
+module was designed using the 'multiprocess' Python framework, which greatly speeds up
+the Reciprocal Best-Hit BLAST/BLAT process by running different query-species searches
+in parallel.
 
   <br>
 
 ###  ___Features:___
 --------
-  - Reciprocal BLASTs of any number of sequences between a query
-species and any number of target species;
-  - Multiprocessing-enabled using Python's multiprocessing module;
-  - Options for specifying or automatically selecting local databases to use at each step;
-  - Local or remote BLAST with customizable options.
-  - Sequence retrival from either FASTA or SQL databases (local-only as of V1.0).
+  - Reciprocal BLAST or BLAT for any number of sequences between a query
+species,  and any number of target species;
+  - Parallelized searches using the Multiprocess framework;
+  - Either manual or automatic specification of databases and/or various parameters;
+  - Choice of either BLAST or BLAT searches, and of any combination of nucleotide
+  or protein search queries;
+  - Searches can be run either locally or on remote databases;
+  - Sequence retrival from 2bit, FASTA, or SQL databases;
+  - Additional functions for quick analysis of output.
+  - A convenience function, RecBlastControl, allows the user to provide a control
+  file that then dictates what searches to run with what criteria.
+  - Integration of the MyGene package for convenient renaming of reciprocal hit
+  annotations.
 
 <br>
 
@@ -44,41 +58,88 @@ RecBlast to be run, up to a mutable maximum limit. Once initialized, each RecBla
 process will then do the following:
 
   1. __Forward BLAST__ of the given sequence against the target species BLAST database;
-  2. __Filter hits__ based on given parameters;
-  3. __Get the full-length sequences__ of all filtered hits;
-  4. __Reverse BLAST__ each filtered hit against the query species BLAST database;
-  5. __Filter reciprocal hits__ based on given parameters;
-  6. __Annotate hits__ using the filtered, sorted reciprocal hits.
-
-  The user can choose to either write all intermediate files to disk; write
-only the final, annotated file to record; or to write nothing at all. The
-program returns a RecBlastContainer object with all the intermediate outputs
-stored within so that the user can inspect the results in memory after
-running the program.
+  2. __Filters hits__ based on given parameters;
+  3. __Fetches the full-length sequences__ of all filtered hits;
+  4. __Reverse BLAST__ of each filtered hit against the query species BLAST database;
+  5. __Filters reciprocal hits__ based on given parameters;
+  6. __Annotates hits__ using the filtered, sorted reciprocal hits.
 
 <br>
 
 ###  ___Parameters and Settings:___
 ----------
 
-##### Forward and Reverse BLAST
+##### Sequence Input:
+The main recblastMP() function accepts either a string or a Path object
+pointing to a file with the input sequences; this file can either in either the
+FASTA or GenBank file formats, and can have any number of included sequences. The
+species to be queried can be provided as a list or tuple of strings, or as a
+single string for a single species.
 
-  The module has its own function, simply called blast(), that handles
+##### Forward and Reverse BLAST/BLAT:
+
+The module has its own function, simply called blast(), that handles
 the search functionality and calls to BLAST. In addition to being able
 to specify whether to use a local BLAST installation or NCBI's servers,
 both the Forward and Reverse BLAST calls take a dictionary parameter,
 fw_blast_kwargs and rv_blast_kwargs, respectively, that can be used to
 modify the two searches independently.
 
-TODO: add more detail here?
+##### Hit Filtering:
+
+The module provides various criteria for filtering hits, including: percent identity;
+percent of query spanned by the hit; percent length spanned by the hit compared to
+the longest hit; percent of score earned by the hit versus the top-scoring hit;
+and the percent length spanned by a hit's HSP compared to the longest HSP in the
+same hit. Using recblastMP(), one can set a unified set of criteria for all searches;
+or if one wants to run different searches using different criteria, one can use
+RecBlastControl with a control file to do so.
+
+##### Sequence Fetching:
+
+RecBlast uses the coordinates of the forward hits to obtain a full sequence
+for the hit to use for the reverse search. To do this, the user can specify which
+of various methods the fetchseq() function should employ to get the full sequence.
+Currently, the module supports fetching sequences from FASTA files, SQL databases,
+or from .2bit files when BLAT is used.
+
+
+##### Annotations:
+There are currently two methods that can be used for annotating forward hits:
+the default "kitchen-sink" method, and the "best hit" method. The default method
+will gather all the reverse hits associated with a given Reverse BLAST/BLAT, filter
+them based on the forward search criteria, and then sort them based on their score.
+The forward hit will then be annotated with said ordered list.
+The "best hit" method will also filter and sort the results, but it will only annotate
+the forward hit with the top-scoring hit.
+
+##### Output:
+When run, RecBlast will first create a folder named RecBlast_output in the active
+directory, with a subfolder with the date and time of execution; within this
+folder, it will create various log files for each process opened by the script
+that will document all of its generated output (controlled by the verbosity level
+assigned to the function). Inside the date-time folder it will also create
+subfolders with the naming structure {species}\_recblast_out, where 'species'
+represents the full species name given to the program for the RecBlast run. Each
+species folder will then contain FASTA files with the naming structure
+{search type}_{sequence name}.fasta, where 'search type' is the forward search
+type used in the RecBlast run, and 'sequence name' is the name associated with the
+sequence used as the query in the run. Additionally, the function itself will return
+a RecBlastContainer object that contains all the intermediate and final results from
+the executed code.
+For very large runs, where storing various RecBlastContainer objects in memory would
+result in excessive loads, one can set the parameter 'min_mem' to 'True', which then
+purges RecBlastContainer objects from memory after the output files are written to
+disk. Additionally, if one does not care for the full sequence information of the hits
+and only wants the hit location information with annotations, setting 'hit_name_only'
+to 'True' will result in the program only writing the hit name, location, and
+annotations to disk in FASTA format as headers sans sequence.
+
 
 <br>K
 
 ### ___Roadmap:___
 ----------------------
 
-  - [V1.5] Entrez implementation for remote sequence searches
-  - [V2.0] BLAT compatibility
-  - [Debated] Use hub-and-spoke model to coordinate all searches in a
-single SearchMaster Process
-  - [VX.x] Tools to use to analyze output
+  - Entrez implementation for remote sequence searches
+  - Additional tools to use to analyze output

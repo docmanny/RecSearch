@@ -24,7 +24,8 @@ from BioSQL.BioSeq import DBSeqRecord
 from Auxilliary import print, ProgressBar, merge_ranges, translate_annotation
 
 
-def percent_identity_searchio(hit, is_protein=True):
+def _percent_identity_searchio(hit, is_protein=True):
+    """Calculates percent identity based on entire hit. Adapted from UCSC BLAT FAQ and Biopython."""
     from math import log
     size_mul = 3 if is_protein else 1
     qali_size = size_mul * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
@@ -48,19 +49,59 @@ def percent_identity_searchio(hit, is_protein=True):
 
 
 def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
+    """Finds and returns the appropriate search database for the given species and search type.
+
+    This function automates the process of selecting the search database needed by the selected search program,
+    like BLAST or BLAT, so that the user does not need to preoccupy themselves with providing said information
+    for a large number of species. For BLAST* that depend on protein databases (BLASTP and BLASTX), the function
+    searches for files matching the form 'Genus_species_protein.*' in the given directory; for BLAST* that depend
+    on DNA databases (BLASTN, TBLASTN, and TBLASTX), it instead looks for files 'Genus_species_genome.*'.
+    If '-transcript' is added to the end of any of the DNA-dependent BLAST*, then instead the function will
+    search for files in the style of 'Genus_species_transcript.*'. In the case of BLAT searches, the program will
+    similarly search for 'Genus_species*.2bit', or for 'Genus_species*transcript.2bit' if '-transcript' is added
+    after the search type.
+    In all usage cases, if the program does not find files matching the 'Genus_species' format, it will try to
+    find the files using a case-insensitive search using the 6-letter abbreviated form of the species name.
+
+    Usage::
+    >>> get_searchdb('blastp', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/Homo_Sapiens_protein.*
+    >>> get_searchdb('tblastn', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap_genome.*
+    >>> get_searchdb('blastn-transcript', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap_transcript.*
+    >>> get_searchdb('blat', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap.2bit
+    >>> get_searchdb('blat-transcript', 'Homo sapiens', '/path/to/search/files')
+    /path/to/search/files/HomSap_transcript.2bit
+
+    Arguments::
+    :param str search_type: The name of the search method (blast or blat, and sub-type: blastp, blastn, blat, tblat...)
+    :param str species: Name of species associated with the database. If there is a space, it will be replaced with an
+    underscore.
+    :param str db_loc: Path to folder containing collection of search databases.
+    :param int verbose: How verbose should the output be. Zero suppresses all output, 2 is max verbosity.
+    :param int indent: Indent level for printed output.
+    :return str:  Path to the identified search database.
+    """
     if verbose:
         print('Blast DB set to auto, choosing blast_db...', indent=indent)
+    species = species.replace(' ', '_')
     if verbose > 1:
         print('Blast DB location set to: ', db_loc, indent=indent)
     if search_type.lower() in ['blastp', 'blastx']:
         db_type = 'protein'
     elif search_type.lower() in ['blastn', 'tblastn', 'tblastx']:
         db_type = 'genome'
+    elif search_type.lower() in ['blastn-transcript', 'tblastn-transcript', 'tblastx-transcript']:
+        db_type = 'transcript'
     elif search_type.lower() in ['blat', 'tblat', 'translated_blat',
                                  'untranslated_blat', 'oneshot blat', 'oneshot tblat']:
         db_type = 'blat'
     elif search_type.lower() in ['blat-transcript']:
-        db_type = ('blat', 'transcript')
+        db_type = 'blat-transcript'
+    elif search_type.lower() in ['tblat-transcript']:
+        db_type = 'tblat-transcript'
     else:
         print('Unable to determing blast db type!', indent=indent)
         raise Exception('Improper search type given: ', search_type)
@@ -72,7 +113,7 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
     if db_path.exists() and db_path.is_dir():
         if db_type == 'blat':
             glob_path = [i for i in db_path.glob('{0}*.2bit'.format(species.replace(' ', '_')))]
-        elif db_type == 'blat-transcript':
+        elif db_type in ['blat-transcript', 'tblat-transcript']:
             glob_path = [i for i in db_path.glob('{0}*transcript.2bit'.format(species.replace(' ', '_')))]
         else:
             glob_path = [i for i in db_path.glob('{0}_{1}*'.format(species.replace(' ', '_'), db_type))]
@@ -87,7 +128,7 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
                 print('RegEx species abbreviation: ', species_abbv_insensitive, indent=indent)
             if db_type == 'blat':
                 glob_path = [i for i in db_path.glob('{0}*.2bit'.format(species_abbv_insensitive))]
-            elif db_type == 'blat-transcript':
+            elif db_type in ['blat-transcript', 'tblat-transcript']:
                 glob_path = [i for i in db_path.glob('{0}*transcript.2bit'.format(species_abbv_insensitive))]
             else:
                 glob_path = [i for i in db_path.glob('{0}_{1}*'.format(species_abbv_insensitive, db_type))]
@@ -133,10 +174,63 @@ def nuc_to_prot_compare(prot_sub, nuc_query, perc_ident, perc_length, trans_tabl
 """
 
 
-def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/dev/null', species=None,
-                BLASTDB='/usr/db/blat', verbose = 1, indent=0, **gfserver_kwargs):
+def blat_server(twobit, order='start', host='localhost', port=20000, type='blat', log='/dev/null', species=None,
+                BLASTDB='/usr/db/blat', verbose = 1, indent=0, try_limit=10, **gfserver_kwargs):
+    """Convenience function that controls a gfServer. Still in alpha.
+
+    This function serves as a python wrapper for the Bash gfServer command. The user can either provide a .2bit file,
+    or else can provide a species and set 'twobit="auto"' to have the function use 'get_searchdb()' to find a .2bit file
+    automatically. By default, the function is set to start up a new gfServer instance, but using the 'order' parameter,
+    the user can execute any of the standard gfServer commands such as 'stop' and 'status'.
+    To start a gfServer, the function first probes the selected port (default is 20000) to ensure its unused; if it is
+    currently in use, the program then goes port-by-port in ascending order until it finds an empty port to use for the
+    server. Then, it simply calls the gfServer command with all the keyword arguments required, as well as with any
+    extra arguments provided by the user.
+
+    Usage::
+    >>>blat_server(twobit='hg38.2bit', port=20000, verbose=3)
+    gfServer start localhost 20001 -canStop -stepSize=5 hg38.2bit
+    # Waits 30 seconds, then starts calling 'gfServer status localhost 20001' every 30 seconds for 5 minutes
+    # If at any point 'gfServer status' returns something that is not an error or "Couldn't connect...", it
+    # returns the port where the server was opened.
+    20001
+    >>>blat_server(twobit='auto', port=20000, species='Homo sapiens', verbose=3)
+    # Calls get_searchdb('blat', 'Homo sapiens', db_loc=BLATDB)
+    # Internally, will return a .2bit file such as 'Homo_sapiens.2bit'
+    20001
+    >>>blat_server(twobit='hg38.2bit', port=20000, order='status', verbose=3)
+    # If the server is active:
+    1
+    >>>blat_server(twobit='hg38.2bit', port=20000, order='status', verbose=3)
+    # If the server either has not been started or is not yet active:
+    0
+    >>>blat_server(twobit='hg38.2bit', port=20000, order='status', verbose=3)
+    # If the server returns an error
+    Exception(...)
+
+
+    :param str twobit: A path to the .2bit file to be used for the server. Can also be set to 'auto'.
+    :param str order: A command for gfServer. Can be one of the following: start, stop, status, files, query (requires
+    a nucleotide sequence in fasta format), protQuery (requires a protein sequence in fasta format), transQuery
+    (requires a nucleotide sequence in fasta format), pcr (requires arguments fPrimer, rPrimer, maxDistance), direct
+    (requires probe.fa, file(s).nib), or pcrDirect (requires fPrimer, rPrimer, file(s).nib).
+    :param str host: Address at which to host the server.
+    :param int port: Port number that will be assigned to server. If in use, will test new port number in increments of
+    1 until a free port is found.
+    :param str type: Type of server to be hosted. 'blat' will start a DNA server, 'tblat' will start a DNAX server for
+    protein queries.
+    :param str log: Path and name of log file to be written.
+    :param str species: Species name that get_searchdb() will use to find .2bit file when twobit='auto'.
+    :param str BLASTDB: Path to the folder containing .2bit file.
+    :param int verbose: Level of verbosity of function output. 0 suppresses all output, 3 is max verbosity.
+    :param int indent: Indentation level of print output.
+    :param int try_limit: Number of tries at 30-second intervals that function should probe the gfServer before timeout.
+    :param gfserver_kwargs: keyword arguments to be passed on to gfServer.
+    :return: if order='start', returns the port of the new gfServer; if order='status', returns 0 if there was no
+    connection, or 1 if the server is active and responding.
+    """
     # Regular: gfServer start localhost portX -stepSize=5 -log=untrans.log database.2bit
-    # Prot>DNA:  gfServer start localhost portY -trans -mask -log=trans.log database.2bit
+    # Prot>DNAX:  gfServer start localhost portY -trans -mask -log=trans.log database.2bit
     gfserver_suppl_args = list()
     if twobit == 'auto' and order != 'stop':
         if verbose:
@@ -172,7 +266,7 @@ def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/
                               stderr=subprocess.STDOUT, universal_newlines=True, shell=True,
                               executable='/bin/bash')
         return
-
+    #Todo: make the portsniffer its own function and make sure it works properly.
     portfinder = subprocess.check_output('/home/manny/Scripts/oneshot/checkifportisopen.sh {}'.format(str(port)),
                                          universal_newlines=True, shell=True, executable='/bin/bash')
     port = portfinder.rstrip()
@@ -190,7 +284,7 @@ def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/
     subprocess.Popen(gfserver_cmd_str, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 universal_newlines=True, shell=True, executable='/bin/bash')
     tries = 0
-    while tries < 10:
+    while tries <= try_limit:
         sleep(30)
         gfcheck = subprocess.Popen('gfServer status {0} {1}'.format(str(host), str(port)), stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, universal_newlines=True, shell=True,
@@ -206,12 +300,28 @@ def blat_server(twobit, order, host='localhost', port=20000, type='blat', log='/
             if verbose:
                 print(out)
             return port
-    if tries >= 10:
+    if tries > try_limit:
         raise Exception('Timed out!')
 
 
 def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1, min_hsps=1, hsp_cumu_score=True,
-              align_scorelist=list(), indent=0, verbose=True):
+              seq_method = 'whole', align_scorelist=list(), indent=0, verbose=1, method='all'):
+    """Filters results based on score, expectation value, length, percent identity, and span; returns a sorted list.
+
+    :param record: Either a SearchIO.QueryResult or a Bio.Blast.Record.
+    :param float perc_score: Minimum percentage of top score for a hit.
+    :param float expect: Maximum e-value for a hit.
+    :param float perc_length: Minimum percent of the longest hit by query coverage for a hit.
+    :param int perc_ident: Minimum percent identity of a hit.
+    :param float perc_span: Minimum percentage of the longest length-span of an HSP within a hit.
+    :param int min_hsps: Minimum number of hsps needed per hit.
+    :param bool hsp_cumu_score: Use cumulative HSP scores rather than individual scores. (LEAVE AS DEFAULT)
+    :param str seq_method: How should id_ranker compile the sequence ranges? [Default: 'whole']
+    :param list align_scorelist: (LEAVE AS DEFAULT)
+    :param int indent: Indent level for pretty print. [Default: 0]
+    :param int verbose: Verbose output? [Default: True]
+    :return:
+    """
     id_list = []
     if verbose:
         print('Beginning ID_Ranker...', indent=indent)
@@ -239,7 +349,8 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
                         ]) >= perc_length * top_length
 
         def hit_perc_id(hit):
-            return percent_identity_searchio(hit) >= perc_ident
+            #return _percent_identity_searchio(hit) >= perc_ident
+            return True
 
         def hit_hsp_span(hit):
             top_span = max([hsp.hit_span for hsp in hit])
@@ -263,6 +374,21 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
         if verbose > 1:
             print('Longest hit for {}:\t'.format(record.id), top_length, indent=indent)
 
+        if verbose >2:
+            print("ALL HITS STATS:")
+            print('Hit Name:\t|\tScore:\t|\tLength:\t|\tP.Ident\t|\thsp_span_list\t|')
+            for hit in record:
+                name = hit.id
+                score = sum([hsp.score for hsp in hit.hsps])
+                length = sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end)
+                                                                   for hsp in hit])])
+                ident = _percent_identity_searchio(hit)
+                span = [hsp.hit_span for hsp in hit]
+                print('{HitName}\t|\t{Score}\t|\t{Length}\t|\t{PIdent}\t|\t{span_list}\t|'.format(HitName=name,
+                                                                                                      Score=score,
+                                                                                                      Length=length,
+                                                                                                      PIdent=ident,
+                                                                                                      span_list=span))
         # Execute filters:
         # HSP
         if verbose > 1:
@@ -297,7 +423,7 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
             raise Exception('No hits in Query Results above minimum score {0}!'.format((top_score * perc_score)))
         # Percent Identity
         if verbose > 1:
-            print('Filtering out all hits with a percent identiy below {}...'.format(perc_ident),
+            print('Filtering out all hits with a percent identity below {}...'.format(perc_ident),
                   indent=indent)
         record = record.hit_filter(hit_perc_id)
         if verbose > 1:
@@ -311,11 +437,21 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
         # Add items to id_list
         for hit in record:
             seq_name = hit.id
-            seq_range = '[:'+''.join(['{0}-{1};'.format(i[0], i[-1]) for i in hit_target_span(hit)]).rstrip(';')+']'
+            if seq_method == 'whole':
+                hts = hit_target_span(hit)
+                seq_range = '[:{0}-{1}]'.format(hts[0][0], hts[-1][-1])
+            elif seq_method == 'strict':
+                seq_range = '[:' + ''.join(['{0}-{1};'.format(i[0],
+                                                              i[-1])
+                                            for i in hit_target_span(hit)]).rstrip(';') + ']'
             seq_score = sum([hsp.score for hsp in hit.hsps])
             if verbose > 2:
                 print("Adding hit {} to id list".format(seq_name+seq_range), indent=indent)
             id_list.append((seq_name, seq_range, seq_score))
+            if method == 'best hit':
+                print('Best Hit Reciprocal BLAST was selected, ending Reverse BLASTS after first annotation!',
+                      indent=indent)
+                break
     else:
         truthple = []
         subject_range = []
@@ -396,6 +532,15 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
 
 
 def biosql_get_sub_db_names(passwd, db="bioseqdb", driver="psycopg2", user="postgres", host="localhost"):
+    """A convenience wrapper for getting all the sub-database names in a BioSQL-formatted database.
+
+    :param str passwd: The password for the database.
+    :param str db: The name of the database.
+    :param str driver: The driver BioSQL will use to access the database.
+    :param str user: The username used to access the database.
+    :param str host: The host of the database.
+    :return: a list of sub-database names.
+    """
     from BioSQL import BioSeqDatabase
     server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
     sub_db_name_list = [i for i in server.keys()]
@@ -403,11 +548,12 @@ def biosql_get_sub_db_names(passwd, db="bioseqdb", driver="psycopg2", user="post
 
 
 def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
-    """
-    As I wrote this script I realized very quickly that there are a great many issues with DBSeqRecords throwing bugs
-    left and right, so I got tired of trying to debug a blackbox and instead decided to convert it to something that
-    works.
-    :param DBSeqRecord_:
+    """Converts a DBSeqRecord object into a SeqRecord object.
+
+    Motivation of this function was two-fold: first, it makes type testing simpler; and second, DBSeqRecord does
+    not have a functional implementation of the translate method.
+    :param DBSeqRecord DBSeqRecord_: The DBSeqRecord object to be converted.
+    :param bool off: Don't actually convert the DBSeqRecord. [Default: False]
     :return:
     """
     assert isinstance(DBSeqRecord_, DBSeqRecord), 'Input must be a DBSeqRecord!'
@@ -421,13 +567,7 @@ def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
 
 
 class RecBlastContainer(dict):
-    """
-    dict(proc_id = '', query_record = '', forward_blast = dict(forward_blast_results = '', forward_blast_errors = ''),
-         forward_ids = dict(forward_ids = list, missing_ids = list), recblast_unanno = list,
-         reverse_blast = dict(reverse_blast_results = '',
-         )
-    """
-
+    """RecBlastContainer class containing all intermediary and final RecBlast outputs."""
     def __init__(self, target_species, query_record):
         super(dict, self).__init__()
         assert isinstance(query_record, SeqIO.SeqRecord), "Query Record MUST be a SeqRecord!"
@@ -474,30 +614,113 @@ class RecBlastContainer(dict):
     def __setstate__(self, state):
         self.update(state)
         self.__dict__ = self
-    # TODO: define __str__ so that it looks nice printed.
-    """ 
-    def __str__(self, indent=''):
+
+    def write(self, file_loc=None):
+        if file_loc is None:
+            date_str = dt.now().strftime('%y-%m-%d_%I-%M-%p')
+            file_loc = Path('./RecBlast_output/{0}/'.format(date_str)).absolute()
+            try:
+                file_loc.mkdir(parents=True)
+            except FileExistsError:
+                pass
+        if self == dict():
+            print('rc_container is empty!')
+            return
+        else:
+            species = [i for i in self.keys() if i != '__dict__']
+            for spc in species:
+                targets = list(self[spc].keys())
+                for target in targets:
+                    rc_local = self[spc][target]
+                    recblast_sequence = rc_local['recblast_results']
+                    if recblast_sequence == list():
+                        print('No RecBlast hits in species {0} for sequence {1}!'.format(spc,
+                                                                                         rc_local[
+                                                                                             'query_record'].name))
+                        continue
+                    else:
+                        recblast_output = file_loc.joinpath(rc_local['output_paths']['recblast_output'])
+                        print('Output Location:\t', str(recblast_output))
+                        try:
+                            recblast_output.parent.mkdir(parents=True)
+                        except FileExistsError:
+                            pass
+                    with recblast_output.open('w') as rc_out:
+                        if isinstance(recblast_sequence, SeqRecord):
+                            SeqIO.write(recblast_sequence, rc_out, 'fasta')
+                        else:
+                            rc_out.write('\n'.join(['>{}'.format(i) for i in recblast_sequence]))
+
+    def __str__(self):
         super(RecBlastContainer, self).__str__()
         strobj = ''
-        if isinstance(self, dict):
-            for k, v in self.items():
-                if indent:
-                    strobj += ''.join([indent, '|---- Key "', str(k), '":', '\n'])
-                else:
-                    strobj += ''.join([indent, '| Key "', str(k), '":', '\n'])
-                if isinstance(v, dict):
-                    indent += '\t'
-                    strobj += v.__str__(indent)
-                else:
-                    strobj += ''.join(['\t', indent, '|---', str(v).replace('\n', '\n\t' + indent + '|--- '), '\n'])
+        i = '\t'
+        for species, species_dict in self.items():
+            strobj += species + ':\n'
+            for query, query_dict in species_dict.items():
+                strobj += 1*i + query + ":\n"
+                for key, value in query_dict.items():
+                    strobj += 2*i + key + ":\n"
+                    if isinstance(value, dict):
+                        for subkey, subvalue in value.items():
+                            strobj += 3 * i + subkey + ":\n"
+                            if isinstance(subvalue, dict):
+                                for subsubkey, subsubvalue in value.items():
+                                    strobj += 4 * i + subsubkey + ":\n"
+                                    val = str(subsubvalue).replace('\n', '\n' + 5*i)
+                                    strobj += 5 * i + val + "\n"
+                            else:
+                                val = str(subvalue).replace('\n', '\n' + 4*i)
+                                strobj += 4 * i + val + "\n"
+                    else:
+                        val = str(value).replace('\n', '\n' + 3*i)
+                        strobj += 3 * i + val + "\n"
         return strobj
-    """
+
+    def __add__(self, other):
+        assert isinstance(other, RecBlastContainer), "Cannot add a non-RecBlastContainer object to a RecBlastContainer!"
+        self.update(other)
+        return self
+
+    def __radd__(self, other):
+        if isinstance(other, int):
+            pass
+        else:
+            self.update(other)
+        return self
 
 
-def blast(seq_record, target_species, database, query_species="Homo sapiens", filetype="fasta", blast_type='blastn',
-          local_blast=False, expect=0.005, megablast=True, use_index=False, blastoutput_custom="", perc_ident=75,
-          verbose=True, indent=0, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', out='pslx', return_raw = False,
+def blast(seq_record, target_species, database, filetype="fasta", blast_type='blastn',
+          local_blast=False, expect=0.005, megablast=True, use_index=False, blastoutput_custom=Path(), perc_ident=75,
+          verbose=True, indent=0, n_threads=1, write=False, BLASTDB='/usr/db/blastdb/', outtype='pslx', return_raw = False,
           **blast_kwargs):
+    """
+    A wrapper function for BLAST and BLAT searches.
+    :param seq_record: The record containing the query sequence for the search. Can be either a SeqIO.SeqRecord or
+                       a string with the file loaction.
+    :param str target_species: The species whose sequence database will be queried.
+    :param str database: The name of the database to be used in the search.
+    :param str filetype: Filetype of seq_record (if seq_record is a SeqRecord object, leave as default.
+                         [default: 'fasta']
+    :param str blast_type: Type of search to conduct. Can be a BLAST type (blastn, blastp, blastx, tblastn, tblastx) or
+                           a BLAT type (blat, tblat). [Default: 'blastn']
+    :param bool local_blast: Should the search be conducted locally or on remote servers? (BLAT searches are always
+                             local.) [Default: False]
+    :param float expect: Highest expect value of BLAST results to be returned. [Default: 0.005]
+    :param bool megablast: Should MegaBLAST be used for nucleotide searches? [Default: True]
+    :param bool use_index: Should BLAST use indexes associated with the database files? [Default: False]
+    :param Path blastoutput_custom: Path() object of file location for output to be written.
+    :param int perc_ident: Minimum percent identity required of results to be returned [Default: 75]
+    :param bool verbose: Verbose output? [Default: True]
+    :param int indent: Indent level for pretty print. [Default: 0]
+    :param int n_threads: Number of threads to allocate for BLAST [Default: 1]
+    :param bool write: Write output of searches? [Default: False]
+    :param str BLASTDB: Path of databases for either BLAST or BLAT. [Default: '/usr/db/blastdb'
+    :param str outtype: Output type. (see options for BLAST and BLAT) [Default: pslx]
+    :param bool return_raw: Return raw output rather than processed BioBlastRecord? [Default: False]
+    :param blast_kwargs: Additional keyword arguments to pass on to BLAST/BLAT.
+    :return: blast_record, blast_err
+    """
     if isinstance(seq_record, SeqIO.SeqRecord):
         pass
     else:
@@ -506,13 +729,13 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
     if verbose:
         print("Now starting BLAST...", indent=indent)
 
-    if blast_type.lower() in ['blat', 'tblat', 'blat-transcript']:
+    if blast_type.lower() in ['blat', 'tblat', 'blat-transcript', 'tblat-transcript']:
         if verbose > 1:
             print('Search Type: ', blast_type, indent=indent)
         args_expanded = ['gfClient', 'localhost', str(database), '/', '/dev/stdin', '/dev/stdout']
         if blast_type.lower() == 'tblat':
             args_expanded += ['-t=dnax', '-q=prot']
-        args_expanded += ['minIdentity={}'.format(perc_ident), '-out=pslx']
+        args_expanded += ['minIdentity={}'.format(perc_ident), '-out={}'.format(outtype)]
         try:
             if verbose:
                 print('Running BLAT command:', indent=indent)
@@ -541,85 +764,40 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
         blast_result, blast_err = blat_result, blat_err
         with StringIO(blast_result) as fin:
             try:
-                if out == 'pslx':
+                if outtype == 'pslx':
                     blast_record = SearchIO.read(fin, format='blat-psl', pslx=True)
-                elif out == 'psl':
+                elif outtype == 'psl':
                     blast_record = SearchIO.read(fin, format='blat-psl')
-                elif out == 'blast8':
+                elif outtype == 'blast8':
                     blast_record = SearchIO.read(fin, format='blast-tab')
-                elif out == 'blast9':
+                elif outtype == 'blast9':
                     blast_record = SearchIO.read(fin, format='blast-tab', comments=True)
-                elif out == 'blast':
+                elif outtype == 'blast':
                     blast_record = SearchIO.read(fin, format='blast-xml')
                 else:
                     raise Exception('Invalid out type')
+            except ValueError:
+                if verbose:
+                    print('No Query Results were found in handle for seq_record {}!'.format(seq_record.name))
+                    raise ValueError
             except Exception:
-                with Path('./blaterr/{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
-                    pslx.write(blast_result)
-                print('Error reading forward BLAT results! Aborting!')
+                if write:
+                    try:
+                        blastoutput_custom.mkdir(parents=True)
+                    except FileExistsError:
+                        pass
+                    with blastoutput_custom.open('w') as pslx:
+                        pslx.write(blast_result)
+                print('Error reading BLAT results! Aborting!')
                 print('Error details:\n')
                 raise
-    elif blast_type.lower() in ['oneshot blat', 'oneshot tblat']:
-        blat_type = blast_type.split(' ')[1]
-        if verbose > 1:
-            print('Search Type: ', blat_type, indent=indent)
-        if 'tblat' in blast_type:
-            settings = ['-t=dnax', '-q=prot', '-repMatch=2253']
-        else:
-            settings = ['-stepSize=5', '-repMatch=1024', '-minScore=0', '-minIdentity=0']
-        # Note: in order to avoid a premature pipe closure, blat MUST be set to pipe to /dev/stderr rather than to
-        # /dev/stdout, since part of its output is, frustratingly, an EOF...
-        args_expanded = ['blat'] + settings + [str(database), '/dev/stdin', '/dev/stderr', '-out={}'.format(out)]
-        try:
-            if verbose:
-                print('Running BLAT command:', indent=indent)
-                print(' '.join(args_expanded), indent=indent + 1)
-            blat = subprocess.Popen(args_expanded, stdout=subprocess.DEVNULL, universal_newlines=True, cwd=BLASTDB,
-                                    stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-            blat_raw, blat_raw_err = blat.communicate(input=seq_record.format('fasta'))
-            if blat_raw_err:
-                print(blat_raw_err)
-                raise Exception(blat_raw_err)
-            head = subprocess.Popen(["head", "-n", "-1"], universal_newlines=True, stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE)
-            blat_handle = head.communicate(input=blat_raw)
-            if verbose > 2:
-                print(blat_handle[0], indent=indent)
-            if verbose:
-                print('Done!', indent=indent)
-            if isinstance(blat_handle, str):
-                blat_result = blat_handle
-                blat_err = None
-            else:
-                blat_result, blat_err = blat_handle
-        except subprocess.CalledProcessError:
-            raise
-        with StringIO(blat_result) as fin:
-            try:
-                if out == 'pslx':
-                    blast_record = SearchIO.read(fin, format='blat-psl', pslx=True)
-                elif out == 'psl':
-                    blast_record = SearchIO.read(fin, format='blat-psl')
-                elif out == 'blast8':
-                    blast_record = SearchIO.read(fin, format='blast-tab')
-                elif out == 'blast9':
-                    blast_record = SearchIO.read(fin, format='blast-tab', comments=True)
-                elif out == 'blast':
-                    blast_record = SearchIO.read(fin, format='blast-xml')
-                else:
-                    raise Exception('Invalid out type')
-            except Exception:
-                with Path('./{0}_{1}.pslx'.format(target_species, seq_record.name)).open('w') as pslx:
-                    pslx.write(blat_result)
-                print('Error reading forward BLAT results! Aborting!')
-                print('Error details:\n')
-                raise
+
     else:
         # search_rec_type = 'blast-xml'
         if local_blast:
             # build up the BLAST arguments:
             args.update({'-db': database, '-evalue': expect,
-                         '-outfmt': '5',
+                         '-outfmt': outtype,
                          '-num_threads': n_threads})
             if blast_type == 'blastn':
                 if megablast:
@@ -655,7 +833,7 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
             args.update(dict(program=str(blast_type), database=str(database), sequence=seq_record.format('fasta'),
                              entrez_query='"{}"[ORGN]'.format(target_species), expect=expect, perc_ident=perc_ident))
             if megablast & (blast_type == 'blastn'):
-                args['megablast'] = True
+                args['megablast'] = 'True'
             if blast_kwargs:
                 args.update(blast_kwargs)
             if verbose:
@@ -682,7 +860,7 @@ def blast(seq_record, target_species, database, query_species="Homo sapiens", fi
                 try:
                     blast_record = NCBIXML.read(fin)
                 except Exception as err:
-                    print('Error reading Forward Blast Results! Aborting!', indent=indent)
+                    print('Error reading Blast Results! Aborting!', indent=indent)
                     print('Error details:\n', err, indent=indent)
                     raise err
 
@@ -912,11 +1090,12 @@ def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='access
 def id_search(id_rec, id_type='brute', verbose=True, indent=0):
     # Define the regex functions
     p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for gi
-         re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for accession
+         re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for refseq accession
          re.compile('(scaffold)([| _:]+)(\d+\.?\d*)(.*)'),    # regex for scaffolds
          re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for generic ID
          re.compile('(chr)([| :_]?)(\D*\d+\.?\d*)(.*)'),    # regex for chr
          re.compile(':(\d+)-(\d+)'),  # regex for sequence range
+         re.compile('(\D+\[?:?\d+\]?)(.*)'),     # regex for assembly #TODO: Manatee fails here b/c output doews not match seq description
          re.compile('(\S+)(.*)'), # regex for gene symbol
          ]
 
@@ -949,9 +1128,13 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
             if verbose > 1:
                 print(p[4].findall(id_rec))
         elif bool(p[6].findall(id_rec)):
-            id_type = 'symbol'
+            id_type = 'assembly'
             if verbose > 1:
                 print(p[6].findall(id_rec))
+        elif bool(p[7].findall(id_rec)):
+            id_type = 'symbol'
+            if verbose > 1:
+                print(p[7].findall(id_rec))
         else:
             raise Exception('Couldn\'t identify the id!')
         if verbose > 1:
@@ -1013,11 +1196,16 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
             item_parts = p[2].findall(id_rec)
             if verbose > 1:
                 print('Item:\t', item_parts, indent=indent)
+            if verbose > 2:
+                print('Appending {} to id list!'.format(item_parts[0][0:3]))
             id_list_ids.append(item_parts[0][0:3])
             if bool(p[5].findall(id_rec)):
-                seq_range[''.join(p[2].findall(id_rec)[0][0:3])] = p[5].findall(id_rec)[0]
                 if verbose > 1:
                     print('Found sequence delimiters in IDs!', indent=indent)
+                item_id = ''.join(p[2].findall(id_rec)[0][0:3])
+                seq_range[item_id] = p[5].findall(id_rec)[0]
+                if verbose > 1:
+                    print(seq_range[item_id])
         else:
             found_id = False
     elif id_type == 'chr':
@@ -1036,7 +1224,9 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
                 seq_range[''.join(p[4].findall(id_rec)[0][0:3])] = p[5].findall(id_rec)[0]
                 if verbose > 1:
                     print('Found sequence delimiters in IDs!', indent=indent)
-    elif id_type == 'symbol':
+        else:
+            found_id = False
+    elif id_type == 'assembly':
         if bool(p[6].findall(id_rec)):
             found_id = True
             if verbose > 1:
@@ -1044,12 +1234,29 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
             item_parts = p[6].findall(id_rec)
             if verbose > 1:
                 print('Item:\t', item_parts, indent=indent)
+            if verbose > 2:
+                print('Appending {} to id list!'.format(item_parts[0][0:3]))
+            id_list_ids.append([item_parts[0][0]])
+            if bool(p[5].findall(id_rec)):
+                seq_range[''.join(p[6].findall(id_rec)[0][0])] = p[5].findall(id_rec)[0]
+                if verbose > 1:
+                    print('Found sequence delimiters in IDs!', indent=indent)
+        else:
+            found_id = False
+    elif id_type == 'symbol':
+        if bool(p[7].findall(id_rec)):
+            found_id = True
+            if verbose > 1:
+                print('Successfully found ID numbers, compiling list!', indent=indent)
+            item_parts = p[7].findall(id_rec)
+            if verbose > 1:
+                print('Item:\t', item_parts, indent=indent)
                 print(item_parts[0])
                 for i, item in enumerate(item_parts[0]):
                     print(i, item)
             id_list_ids.append(item_parts[0][0:3])
             if bool(p[5].findall(id_rec)):
-                seq_range[''.join(p[6].findall(id_rec)[0][0:3])] = p[5].findall(id_rec)[0]
+                seq_range[''.join(p[7].findall(id_rec)[0][0:3])] = p[5].findall(id_rec)[0]
                 if verbose > 1:
                     print('Found sequence delimiters in IDs!', indent=indent)
     else:
@@ -1352,7 +1559,7 @@ class FetchSeq(object):  # The meat of the script
                     itemsnotfound.append(id)
             return seqdict, itemsnotfound
         else:
-            raise Exception('Not a valid database source!')
+            raise Exception('Not a valid database source: {}'.format(source))
 
 
 def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='brute', server=None, source="SQL",
@@ -1455,7 +1662,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
 
     def __init__(self, proc_id, rb_queue, rb_results_queue, fw_blast_db, infile_type, output_type, BLASTDB,
                  query_species, blast_type_1, blast_type_2, local_blast_1, local_blast_2, rv_blast_db, expect,
-                 perc_score, outfolder, indent,
+                 perc_score, outfolder, indent, reciprocal_method, hit_name_only,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
                  write_intermediates):
@@ -1495,6 +1702,9 @@ class RecBlastMP_Thread(multiprocessing.Process):
         self.BLASTDB = BLASTDB
         self.write_intermediates = write_intermediates
         self.indent = indent
+        self.reciprocal_method = reciprocal_method
+        self.hit_name_only = hit_name_only
+
 
     def run(self):  # The meat of the script
         master_out = self.outfolder.joinpath('Proc-{0}.log'.format(self.name)).absolute()
@@ -1522,10 +1732,11 @@ class RecBlastMP_Thread(multiprocessing.Process):
                                          passwd=self.passwd,
                                          fw_id_db_version=self.fw_id_db_version, verbose=self.verbose, indent=self.indent,
                                          n_threads=self.n_threads,
-                                         host=self.host,
+                                         host=self.host, reciprocal_method = self.reciprocal_method,
                                          user=self.user, driver=self.driver,
                                          fw_blast_kwargs=self.fw_blast_kwargs, rv_blast_kwargs=self.rv_blast_kwargs,
                                          proc_id=self.name, write_intermediates=self.write_intermediates,
+                                         hit_name_only=self.hit_name_only
                                          )
                     self.rb_queue.task_done()
                     self.rb_results_queue.put(output)
@@ -1544,14 +1755,15 @@ class RecBlast(object):
         self.seq_record.name = self.seq_record.name.translate(transtab)
         self.target_species = target_species
 
-    def __call__(self, fw_blast_db, infile_type, output_type, BLASTDB,
+    def __call__(self, fw_blast_db, infile_type, output_type, BLASTDB, reciprocal_method,
                  query_species, blast_type_1, blast_type_2, local_blast_1, local_blast_2, rv_blast_db, expect,
-                 perc_score, indent,
+                 perc_score, indent, hit_name_only,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
                  write_intermediates, proc_id):
         # Simple shunt to minimize having to rewrite code.
         target_species = self.target_species
+
         # Creating the RecBlast Container
         rc_container_full = RecBlastContainer(target_species=target_species, query_record=self.seq_record)
         # Shorthand reference for full container
@@ -1560,6 +1772,9 @@ class RecBlast(object):
         if verbose:
             print('[Proc: {0}] [Seq.Name: {1}] [Target: {2}]'.format(proc_id, self.seq_record.name, target_species),
                   indent=indent)
+            print('Parameters:')
+            for kwarg, value in locals().items():
+                print(kwarg, ':\t', value, indent=indent+1)
         indent += 1
         if verbose > 1:
             print('Creating handles for intermediary outputs...', indent=indent)
@@ -1611,6 +1826,8 @@ class RecBlast(object):
             except KeyError:
                 print('No port found for species ', target_species)
                 return rc_container_full
+            except TypeError:
+                assert isinstance(fw_blast_db, Path), "Expected Path object in lieu of a subscriptable dictionary!"
         elif 'oneshot' in blast_type_1.lower():
             if verbose > 1:
                 print('Since blat was selecting, searching for appropriate .2bit file for blat...', indent=indent)
@@ -1640,7 +1857,20 @@ class RecBlast(object):
                 print('Opening Forward blast output located at ',
                       str(output_paths['forward_blast_output'].absolute()), indent=indent+1)
             with output_paths['forward_blast_output'].open("r") as forward_blasthits:
-                fwblastrecord = NCBIXML.read(forward_blasthits)
+                if 'blat' in blast_type_1:
+                    fwblastrecord = SearchIO.read(forward_blasthits, 'blat-psl')
+                else:
+                    fwblastrecord = NCBIXML.read(forward_blasthits)
+        elif isinstance(fw_blast_db, Path):
+            with fw_blast_db.open('r') as forward_blasthits:
+                if fw_blast_db.suffix == '.psl':
+                    fwblastrecord = SearchIO.read(forward_blasthits, 'blat-psl')
+                elif fw_blast_db.suffix == '.pslx':
+                    fwblastrecord = SearchIO.read(forward_blasthits, 'blat-psl', pslx=True)
+                elif fw_blast_db.suffix == '.xml':
+                    fwblastrecord = SearchIO.read(forward_blasthits, 'blast-xml')
+                else:
+                    raise Exception('FileTypeError: Invalid File Type!')
         else:
             if verbose:
                 print("Performing forward BLAST for {}... ".format(self.seq_record.name), indent=indent+1)
@@ -1650,20 +1880,20 @@ class RecBlast(object):
                         for key, item in fw_blast_kwargs.items():
                             print('{0}\t=\t{1}'.format(key, item), indent=indent+2)
                     fwblastrecord, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
-                                                     database=fw_blast_db, query_species=query_species,
+                                                     database=fw_blast_db,
                                                      filetype=infile_type, BLASTDB=BLASTDB,
                                                      blast_type=blast_type_1, local_blast=local_blast_1, expect=expect,
                                                      megablast=megablast, n_threads=n_threads,
-                                                     blastoutput_custom=str(output_paths['forward_blast_output']),
+                                                     blastoutput_custom=output_paths['forward_blast_output'],
                                                      perc_ident=perc_ident, verbose=verbose, write=write_intermediates,
                                                      **fw_blast_kwargs)
                 else:
                     fwblastrecord, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
-                                                     database=fw_blast_db, query_species=query_species,
+                                                     database=fw_blast_db,
                                                      filetype=infile_type, BLASTDB=BLASTDB,
                                                      blast_type=blast_type_1, local_blast=local_blast_1, expect=expect,
                                                      megablast=megablast, n_threads=n_threads,
-                                                     blastoutput_custom=str(output_paths['forward_blast_output']),
+                                                     blastoutput_custom=output_paths['forward_blast_output'],
                                                      perc_ident=perc_ident, verbose=verbose, write=write_intermediates)
             except Exception as err:
                 print('WARNING! UNCATCHED EXCEPTION OCCURED!')
@@ -1680,6 +1910,7 @@ class RecBlast(object):
         if verbose:
             print('Forward blast done!', indent=indent)
             print('Culling Results based on given criteria...', indent=indent)
+
         try:
             f_id_ranked = id_ranker(fwblastrecord, perc_ident=perc_ident, perc_score=perc_score,
                                     expect=expect, perc_length=perc_length, verbose=verbose, indent=indent+1)
@@ -1712,52 +1943,81 @@ class RecBlast(object):
             if 'sql' in fw_source.lower():
                 server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd,
                                                       host=host, db=fw_id_db)
+            if fw_source == 'strict':
+                if verbose:
+                    print('Fetching Sequence from hit results!', indent=indent)
+                seq_dict = {}
+                missing_items = []
+                assert isinstance(fwblastrecord, SearchIO.QueryResult), 'Strict fetching only implemented for SearchIO!'
+                for hit in fwblastrecord:
+                    seq_frags = [rec.hit for rec in hit.fragments]
+                    first = True
+                    for i in seq_frags:
+                        if first:
+                            seq = i
+                            first = False
+                        else:
+                            seq += i
+                        seq.description = ''.join([str(i) for i in seq.id])
+                    seq_dict[seq.id] = seq
             else:
                 server = None
-            if verbose:
-                print('Beginning Fetchseq!', indent=indent)
+                if verbose:
+                    print('Beginning Fetchseq!', indent=indent)
             # Note: BioSQL is NOT thread-safe! Throws tons of errors if executed with more than one thread!
-            seq_dict, missing_items = fetchseqMP(ids=f_id_out_list, species=target_species, delim='\t',
-                                                 id_type='brute', server=server, source=fw_source,
-                                                 db=fw_id_db, host=host, driver=driver,
-                                                 version=fw_id_db_version, user=user,
-                                                 passwd=passwd, email=email, batch_size=fetch_batch_size,
-                                                 output_type=output_type, output_name='', write=write_intermediates,
-                                                 verbose=verbose, n_threads=1, indent=indent+1,
-                                                 n_subthreads=1)
+                seq_dict, missing_items = fetchseqMP(ids=f_id_out_list, species=target_species, delim='\t',
+                                                     id_type='brute', server=server, source=fw_source,
+                                                     db=fw_id_db, host=host, driver=driver,
+                                                     version=fw_id_db_version, user=user,
+                                                     passwd=passwd, email=email, batch_size=fetch_batch_size,
+                                                     output_type=output_type, output_name='', write=write_intermediates,
+                                                     verbose=verbose, n_threads=1, indent=indent+1,
+                                                     n_subthreads=1)
             if verbose:
                 print('Done with fetching!', indent=indent)
         except IndexError:
             print('WARNING! FETCHSEQ FAILED! SKIPPING THIS SEQUENCE!')
             return rc_container_full
 
-        if missing_items:
+        if missing_items == []:
             fw_ids['missing_items'] = missing_items
             print('Items were missing!', indent=indent)
             for i in missing_items:
                 print(i, indent=indent+1)
 
         recblast_sequence = []
+
         if seq_dict:
             for item in f_id_ranked:
-                junk1, id_list_ids, seq_range, junk2 = id_search(''.join([str(i) for i in item]), verbose=verbose,
-                                                                 indent=indent+1)
+                allitems = ''.join([str(i) for i in item])
+                if verbose >2:
+                    print(allitems)
+                id_list_ids = id_search(allitems, verbose=verbose, indent=indent+1)[1]
                 if verbose > 3:
                     print('f-id-ranked: ', indent=indent)
                     print(id_list_ids, indent=indent+1)
                 # Todo: find a more efficient way to do this:
+                if verbose:
+                    print('Sorting Sequence Dict into ordered list...', indent=indent)
                 for otherkey, otheritem in seq_dict.items():
                     print(id_list_ids[0], indent=indent+1)
                     print(otheritem.description, indent=indent+1)
                     if ''.join([str(i) for i in id_list_ids[0]]) in otheritem.description:
                         recblast_sequence.append(otheritem)
+
+        else:
+            print('No SeqDict was returned!')
+            raise Exception('No SeqDict was returned!')
+        print("asdfasdfasdfasdfasdf***************************")
+        print(recblast_sequence)
         rc_container['recblast_unanno'] = recblast_sequence
         if verbose:
             print('Preparing for Reverse BLAST...', indent=indent)
         for index, entry_record in enumerate(recblast_sequence):
             if verbose:
                 print("Entry {} in unannotated RecBlast Hits:\n".format(entry_record.name), indent=indent+1)
-                for item in [entry_record.id, entry_record.description, entry_record.seq]:
+                for item in [entry_record.id, entry_record.description, entry_record.seq[0:10] + '...' +
+                             entry_record.seq[-1]]:
                     print(item, indent=indent+2)
             output_paths['reverse_blast_output'].append(
                 Path("{0}_recblast_out".format(target_species).replace(' ', '_') +
@@ -1775,15 +2035,16 @@ class RecBlast(object):
                      ))
             if verbose:
                 print('Performing Reverse Blast:', indent=indent)
-            if blast_type_2 in ['blat', 'tblat', 'blat-transcript']:
+            if blast_type_2 in ['blat', 'tblat', 'blat-transcript', 'tblat-transcript']:
                 try:
+                    print(rv_blast_db)
                     rv_blast_db_i = rv_blast_db[query_species]
                 except KeyError:
                     print('No port found for species ', query_species)
                     return rc_container_full
             if (rv_blast_db == 'auto') | (rv_blast_db == 'auto-transcript'):
                 try:
-                    rv_blast_db_i = get_searchdb(search_type=blast_type_2, species=target_species, db=BLASTDB,
+                    rv_blast_db_i = get_searchdb(search_type=blast_type_2, species=query_species, db=BLASTDB,
                                                  verbose=verbose, indent=indent+1)
                 except Exception as Err:
                     print(Err)
@@ -1814,30 +2075,31 @@ class RecBlast(object):
                             for key, item in rv_blast_kwargs.items():
                                 print("Reverse BLAST keywords:", indent=indent+1)
                                 print(key, '\t', item, indent=indent+2)
-                        rvblastrecord, blast_err = blast(seq_record=entry_record, target_species=target_species,
-                                                         database=rv_blast_db_i, query_species=query_species,
+                        rvblastrecord, blast_err = blast(seq_record=entry_record, target_species=query_species,
+                                                         database=rv_blast_db_i,
                                                          filetype=infile_type, BLASTDB=BLASTDB,
                                                          blast_type=blast_type_2, local_blast=local_blast_2,
                                                          expect=expect, n_threads=n_threads,
                                                          query_length=len(self.seq_record),
                                                          megablast=megablast, indent=indent+1,
-                                                         blastoutput_custom=str(
-                                                                           output_paths['reverse_blast_output'][index]),
+                                                         blastoutput_custom=output_paths['reverse_blast_output'][index],
                                                          perc_ident=perc_ident, verbose=verbose,
                                                          write=write_intermediates,
                                                          **rv_blast_kwargs)
                     else:
-                        rvblastrecord, blast_err = blast(seq_record=entry_record, target_species=target_species,
-                                                         database=rv_blast_db_i, query_species=query_species,
+                        rvblastrecord, blast_err = blast(seq_record=entry_record, target_species=query_species,
+                                                         database=rv_blast_db_i,
                                                          filetype=infile_type, BLASTDB=BLASTDB,
                                                          blast_type=blast_type_2, local_blast=local_blast_2,
                                                          expect=expect, n_threads=n_threads, indent=indent+1,
                                                          query_length=len(self.seq_record),
                                                          megablast=megablast,
-                                                         blastoutput_custom=str(
-                                                                           output_paths['reverse_blast_output'][index]),
+                                                         blastoutput_custom=output_paths['reverse_blast_output'][index],
                                                          perc_ident=perc_ident, verbose=verbose,
                                                          write=write_intermediates)
+                except ValueError as err:
+                    print('No reverse hits were found for seq_record {}, continuing!'.format(entry_record.name))
+                    continue
                 except Exception as err:
                     print('Warning! Uncaught exception!')
                     print(err)
@@ -1852,7 +2114,8 @@ class RecBlast(object):
                 print('Culling results using given criteria...', indent=indent)
             try:
                 reverse_hits = id_ranker(rvblastrecord, perc_ident=perc_ident, perc_score=perc_score,
-                                         perc_length=perc_length, expect=expect, verbose=verbose, indent=indent+1)
+                                         perc_length=perc_length, expect=expect, verbose=verbose, indent=indent+1,
+                                         method=reciprocal_method)
             except Exception as err:
                 print('No Reverse Blast Hits were found for this hit!', indent=indent + 1)
                 print('Continuing to next Sequence!', indent=indent + 1)
@@ -1870,28 +2133,79 @@ class RecBlast(object):
                     print('Done. Annotating RecBlast Hits:', indent=indent+1)
             rv_ids = rc_container['reverse_ids']
             rv_ids['ids'] = reverse_blast_annotations
-            entry_record.description += '|-|' + ''.join(reverse_blast_annotations)
+            if reciprocal_method == 'best hit':
+                print('Best Hit Reciprocal BLAST was selected, ending Reverse BLASTS after first annotation!',
+                      indent=indent)
+                entry_record.description += '|-|' + reverse_blast_annotations[0] if \
+                                                    isinstance(reverse_blast_annotations, list) \
+                                                    else reverse_blast_annotations
             if verbose > 3:
                 print(entry_record, indent=indent+2)
+        if hit_name_only:
+            recblast_sequence = [entry_record.id + '\t' +  entry_record.description for entry_record in recblast_sequence]
         rc_container['recblast_results'] = recblast_sequence
         print('PID', 'SeqName', sep='\t')
         print(proc_id, self.seq_record.name, sep='\t')
         return rc_container_full
         # def run(self):
 
-# Todo: change global perc_ident values to use decimal percentages
+
+
 def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-transcript', infile_type='fasta',
                output_type='fasta',
                host='localhost', user='postgres', driver='psycopg2',
                query_species='Homo sapiens', blast_type_1='blastn', blast_type_2='blastn', local_blast_1=False,
                local_blast_2=False,
-               expect=10, perc_score=0.5, perc_ident=50, perc_length=0.5, megablast=True,
+               expect=10, perc_score=0.5, perc_ident=0.50, perc_length=0.5, megablast=True,
                email='',
-               id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50, passwd='',
+               id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50,
+               passwd='', hit_name_only=False, min_mem=False,
                fw_id_db_version='auto', BLASTDB='/usr/db/blastdb', indent=0,
                verbose='v', max_n_processes='auto', n_threads=2, write_intermediates=False, write_final=True,
-               fw_blast_kwargs=None, rv_blast_kwargs=None):
+               reciprocal_method = 'best hit', fw_blast_kwargs=None, rv_blast_kwargs=None):
+    """
 
+    :param seqfile:
+    :param target_species:
+    :param fw_blast_db:
+    :param rv_blast_db:
+    :param infile_type:
+    :param output_type:
+    :param host:
+    :param user:
+    :param driver:
+    :param query_species:
+    :param blast_type_1:
+    :param blast_type_2:
+    :param local_blast_1:
+    :param local_blast_2:
+    :param expect:
+    :param perc_score:
+    :param perc_ident:
+    :param perc_length:
+    :param megablast:
+    :param email:
+    :param id_type:
+    :param fw_source:
+    :param fw_id_db:
+    :param fetch_batch_size:
+    :param passwd:
+    :param hit_name_only:
+    :param min_mem:
+    :param fw_id_db_version:
+    :param BLASTDB:
+    :param indent:
+    :param verbose:
+    :param max_n_processes:
+    :param n_threads:
+    :param write_intermediates:
+    :param write_final:
+    :param reciprocal_method:
+    :param fw_blast_kwargs:
+    :param rv_blast_kwargs:
+    :return:
+    """
+    # Verbose-ometer
     if isinstance(verbose, str):
         verbose = verbose.lower().count('v')
     elif isinstance(verbose, int) and verbose > 0:
@@ -1931,13 +2245,21 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
               "Moore, Alan, David Lloyd, Steve Whitaker, and Siobhan Dodds. V for Vendetta. New York: DC Comics, 2005.")
     if verbose > 3:
         multiprocessing.log_to_stderr(logging.DEBUG)
+    #########################################################################
 
+    # Converting perc_ident to integer because that's how these programs roll
+    perc_ident = perc_ident*100
+    #########################################################################
+
+    # Multiprocessing set-up
     if verbose > 1:
-        print('Creating queues... ')
+        print('Creating queues... ', end='')
     rb_queue = multiprocessing.JoinableQueue()
     rb_results = multiprocessing.Queue()
     if verbose > 1:
         print('Done!')
+    #########################################################################
+
     # Check Seqfile to make sure its real
     if verbose >= 1:
         print('Loading SeqFile records... ')
@@ -1946,6 +2268,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
         seqfile_path = Path(seqfile)
     elif isinstance(seqfile, Path):
         seqfile_path = seqfile
+    #########################################################################
 
     # Loads rec_handle when seqfile_path is defined:
     try:
@@ -1963,6 +2286,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
     else:
         if verbose >= 1:
             print('Done!')
+    #########################################################################
 
     # Calculation of processes to run
     if verbose > 1:
@@ -1982,6 +2306,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
         n_processes = n_jobs
         if verbose:
             print('Number of processes to be made: ', n_processes)
+    #########################################################################
 
     # Get date-time and make output folder
     date_str = dt.now().strftime('%y-%m-%d_%I-%M-%p')
@@ -1990,15 +2315,16 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
         outfolder.mkdir(parents=True)
     except FileExistsError:
         pass
-    if verbose > 1:
-        print('Parameters:')
-        print('Blast ')
+    #########################################################################
+
+
     # Blat stuff
     # Check if BLAT, then if so, make sure that fw_blast_db is a dictionary with a port for each species:
     if blast_type_1.lower() in ['blat', 'tblat']:
-        assert isinstance(fw_blast_db, dict), "For BLAT searches, fw_blast_db must be a dictionary with " \
-                                              "valid species-port key pairs"
-    if blast_type_2.lower() in ['blat', 'tblat', 'blat-transcript']:
+        assert isinstance(fw_blast_db, dict) or isinstance(fw_blast_db, Path), "For BLAT searches, fw_blast_db must be " \
+                                                                               "a dictionary with valid species-port " \
+                                                                               "key pairs; OR a Path object"
+    if blast_type_2.lower() in ['blat', 'tblat', 'blat-transcript', 'tblat-transcript']:
         assert isinstance(rv_blast_db, dict), "For BLAT searches, rv_blast_db must be a dictionary with " \
                                               "valid species-port key pairs"
 
@@ -2010,7 +2336,6 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                                                      host=host)
             if verbose:
                 print(target_species, indent=1)
-
     server_activated = {}
     if isinstance(rv_blast_db, dict):
         if rv_blast_db[query_species] == 'auto':
@@ -2028,41 +2353,43 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
             rv_blast_db[query_species] = blat_server('auto', 'start', host=host, port=30000, species=query_species,
                                                      BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_2)
             server_activated[query_species] = rv_blast_db[query_species]
-
-    if isinstance(target_species, list):
-        for species in target_species:
-            if fw_blast_db[species] == 'auto':
+    if isinstance(fw_blast_db, dict):
+        if isinstance(target_species, list):
+            for species in target_species:
+                if fw_blast_db[species] == 'auto':
+                    fw_server_online = False
+                else:
+                    fw_server_online = blat_server('auto','status', host=host, port=fw_blast_db[species],
+                                                   species=species, BLASTDB=BLASTDB, verbose=verbose, indent=1,
+                                                   type=blast_type_1)
+                if not fw_server_online and 'blat' in blast_type_1.lower():
+                    fw_blast_db[species] = blat_server('auto','start', host=host, port=20000, species=species,
+                                                       BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
+                    server_activated[species] = fw_blast_db[species]
+                elif not fw_server_online and 'tblat' in blast_type_1.lower():
+                    fw_blast_db[species] = blat_server('auto', 'start', host=host, port=20000, species=species,
+                                                       BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
+                    server_activated[species] = fw_blast_db[species]
+            print(fw_blast_db)
+        else:
+            if fw_blast_db[target_species] == 'auto':
                 fw_server_online = False
             else:
-                fw_server_online = blat_server('auto','status', host=host, port=fw_blast_db[species], species=species,
-                                               BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
+                fw_server_online = blat_server('auto', 'status', host=host, port=fw_blast_db[target_species],
+                                               species=target_species, BLASTDB=BLASTDB, verbose=verbose, indent=1,
+                                               type=blast_type_1)
             if not fw_server_online and 'blat' in blast_type_1.lower():
-                fw_blast_db[species] = blat_server('auto','start', host=host, port=20000, species=species,
-                                                   BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
-                server_activated[species] = fw_blast_db[species]
+                fw_blast_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
+                                                          species=target_species,
+                                                          BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
+                server_activated[target_species] = fw_blast_db[target_species]
             elif not fw_server_online and 'tblat' in blast_type_1.lower():
-                fw_blast_db[species] = blat_server('auto', 'start', host=host, port=20000, species=species,
-                                                   BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
-                server_activated[species] = fw_blast_db[species]
-        print(fw_blast_db)
-    else:
-        if fw_blast_db[target_species] == 'auto':
-            fw_server_online = False
-        else:
-            fw_server_online = blat_server('auto', 'status', host=host, port=fw_blast_db[target_species],
-                                           species=target_species, BLASTDB=BLASTDB, verbose=verbose, indent=1,
-                                           type=blast_type_1)
-        if not fw_server_online and 'blat' in blast_type_1.lower():
-            fw_blast_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
-                                                      species=target_species,
-                                                      BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
-            server_activated[target_species] = fw_blast_db[target_species]
-        elif not fw_server_online and 'tblat' in blast_type_1.lower():
-            fw_blast_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
-                                                      species=target_species,
-                                                      BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
-            server_activated[target_species] = fw_blast_db[target_species]
-        print(fw_blast_db)
+                fw_blast_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
+                                                          species=target_species,
+                                                          BLASTDB=BLASTDB, verbose=verbose, indent=1, type=blast_type_1)
+                server_activated[target_species] = fw_blast_db[target_species]
+            print(fw_blast_db)
+    #########################################################################
 
     # RecBlast Thread init
     if verbose >= 1:
@@ -2077,18 +2404,24 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                                              perc_ident=perc_ident,
                                              perc_length=perc_length, megablast=megablast, email=email, id_type=id_type,
                                              fw_source=fw_source, fw_id_db=fw_id_db, fetch_batch_size=fetch_batch_size,
-                                             passwd=passwd,
+                                             passwd=passwd, reciprocal_method=reciprocal_method,
                                              fw_id_db_version=fw_id_db_version, verbose=verbose, n_threads=n_threads,
-                                             host=host, outfolder=outfolder, indent=1,
+                                             host=host, outfolder=outfolder, indent=indent+1,
+                                             hit_name_only = hit_name_only,
                                              user=user, driver=driver, write_intermediates=write_intermediates,
                                              fw_blast_kwargs=fw_blast_kwargs, rv_blast_kwargs=rv_blast_kwargs)
                            for i in range(n_processes)]
     for rcb in rec_blast_instances:
         rcb.start()
+    #########################################################################
+
+    # Progress bar
     progbar = ProgressBar(n_jobs, fmt=ProgressBar.FULL)
     if verbose:
         progbar()
+    #########################################################################
 
+    # Load species list and add RecBlasts to queue
     if isinstance(target_species, list):
         for species in target_species:
             # Initiate RecBlast Tasks
@@ -2101,24 +2434,39 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
             if verbose > 2:
                 print('Sequence: ', rec.name)
             rb_queue.put(RecBlast(seq_record=rec, target_species=target_species))
+    #########################################################################
 
+    # Drop poison pills in queue
     for rcb in rec_blast_instances:
         rb_queue.put(None)
+    #########################################################################
+
+    # Collect results
     recblast_out = list()
     while n_jobs:
         try:
             recblast_out.append(rb_results.get())
-        except TypeError:
-            print('Behold the stupid TypeError Bug!')
-            return recblast_out
+        except Exception as err:
+            print(err)
         else:
             progbar.current += 1
             progbar()
             n_jobs -= 1
+            if write_final:
+                try:
+                    recblast_out[-1].write(file_loc=outfolder)
+                except Exception as err:
+                    print('WARNING! Could not write output of RecBlast #{}'.format(len(recblast_out)))
+                    print(err)
+            if min_mem:
+                recblast_out[-1] = 1
+    #########################################################################
 
+    # Kill any living threads at this point, for good measure
     for rcb in rec_blast_instances:
         if rcb.is_alive():
             rcb.join()
+    #########################################################################
 
     """if server_activated != {}:
         if verbose:
@@ -2134,16 +2482,15 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
             else:
                 print('\tStopped!')
     """
-    if write_final:
-        try:
-            recblast_write(recblast_out, verbose=verbose, outfolder=outfolder)
-        except Exception as err:
-            print(err)
+    # Combine all the rc_out records into one big one and return it:
+    recblast_out = sum(recblast_out)
     return recblast_out
+    #########################################################################
+
 
 
 def recblast_write(rc_container, verbose=1, outfolder=None):
-    if outfolder is None:
+    if not isinstance(outfolder, Path):
         date_str = dt.now().strftime('%y-%m-%d_%I-%M-%p')
         outfolder = Path('./RecBlast_output/{0}/'.format(date_str)).absolute()
         try:
