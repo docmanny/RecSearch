@@ -2163,6 +2163,48 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                fw_id_db_version='auto', BLASTDB='/usr/db/blastdb', indent=0,
                verbose='v', max_n_processes='auto', n_threads=2, write_intermediates=False, write_final=True,
                reciprocal_method = 'best hit', fw_blast_kwargs=None, rv_blast_kwargs=None):
+    """
+
+    :param seqfile:
+    :param target_species:
+    :param fw_blast_db:
+    :param rv_blast_db:
+    :param infile_type:
+    :param output_type:
+    :param host:
+    :param user:
+    :param driver:
+    :param query_species:
+    :param blast_type_1:
+    :param blast_type_2:
+    :param local_blast_1:
+    :param local_blast_2:
+    :param expect:
+    :param perc_score:
+    :param perc_ident:
+    :param perc_length:
+    :param megablast:
+    :param email:
+    :param id_type:
+    :param fw_source:
+    :param fw_id_db:
+    :param fetch_batch_size:
+    :param passwd:
+    :param hit_name_only:
+    :param min_mem:
+    :param fw_id_db_version:
+    :param BLASTDB:
+    :param indent:
+    :param verbose:
+    :param max_n_processes:
+    :param n_threads:
+    :param write_intermediates:
+    :param write_final:
+    :param reciprocal_method:
+    :param fw_blast_kwargs:
+    :param rv_blast_kwargs:
+    :return:
+    """
     # Verbose-ometer
     if isinstance(verbose, str):
         verbose = verbose.lower().count('v')
