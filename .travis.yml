@@ -11,7 +11,15 @@ python:
 env:
   global:
     - BLASTDB='/home/travis/db/blastdb' BLATDB='/home/travis/db/blatdb'
-before_install: bash travis_install.sh
+
+before_install:
+  # Some prereq programs
+  - add-apt-repository ppa:debian-med/ppa
+  - apt-get -qq update
+  - apt-get install -y ncbi-blast+
+  # runs a script to get BLAT and all the databases and configure some file structures
+  - bash travis_install.sh
+
 # command to install dependencies
 install: "pip install . && pip install -r requirements.txt"
 # command to run tests
