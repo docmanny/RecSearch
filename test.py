@@ -34,6 +34,7 @@ def pytest_generate_tests(metafunc):
 
 def pytest_generate_tests(metafunc):
     idlist = []
+    argnames = []
     argvalues = []
     for scenario in metafunc.cls.scenarios:
         idlist.append(scenario[0])
@@ -43,17 +44,7 @@ def pytest_generate_tests(metafunc):
     metafunc.parametrize(argnames, argvalues, ids=idlist, scope="class")
 
 
-class Test_percent_identity_searchio(object):
-    scenarios = [('', {})]
-    pass
-
-
 class Test_getsearchdb(object):
-    scenarios = [('', {})]
-    pass
-
-
-class Test_blatserver(object):
     scenarios = [('', {})]
     pass
 
