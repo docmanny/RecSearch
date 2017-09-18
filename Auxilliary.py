@@ -1,7 +1,8 @@
 import re
 import sys
 from builtins import print as _print
-
+from pathlib import Path
+from collections import namedtuple, Counter, OrderedDict
 import mygene
 
 
@@ -11,7 +12,7 @@ class ProgressBar(object):
     FULL = '%(bar)s %(current)d/%(total)d (%(percent)3d%%) %(remaining)d to go'
 
     def __init__(self, total, width=100, fmt=DEFAULT, symbol='=',
-                 output=sys.stderr):
+                 output=sys.stdout):
         assert len(symbol) == 1
 
         self.total = total
@@ -90,6 +91,35 @@ def cleanup_fasta_input(handle, filetype='fasta', write=True):
         with open(handle + '.clean', 'w') as outf:
             SeqIO.write(newlist, outf, filetype)
     return newlist
+
+
+def massively_translate_fasta(SeqIter):
+    from Bio import SeqIO
+    from itertools import chain, islice
+    import mygene
+    mg = mygene.MyGeneInfo()
+    all_genes = []
+    def chunks(iterable, size=1000):
+        iterator = iter(iterable)
+        for first in iterator:
+            yield list(chain([first], islice(iterator, size - 1)))
+
+    for x in chunks(SeqIter):
+        out = mg.querymany([a.id for a in x], scopes='refseq', fields='symbol', species='Homo sapiens', returnall=True)
+        tdict={}
+        for a in out['out']:
+            try:
+                tdict[a['query']] = a['symbol']
+            except KeyError:
+                continue
+        for i in x:
+            try:
+                i.id = tdict[i.id]
+            except KeyError:
+                continue
+        all_genes += x
+    return all_genes
+
 
 
 def translate_annotation(annotation, orig='refseq', to='symbol', species='human'):
@@ -379,8 +409,330 @@ def count_dups(recblast_out):
             anno_count_dict[annotation] = len(target_list)
     return species_anno_target_dict, species_anno_count_dict
 
+def filter_RBHs(hit, stat):
+    """
+    Convenience function for use with result_filter() method of RecBlastContainer.
+    :param hit:
+    :return:
+    """
+    from recblast_MP import id_search
+    pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
+    try:
+        hit_split = hit.description.split('|-|')
+        target_id = hit_split[0]
+        top_anno = hit_split[1]
+    except ValueError:
+        print(hit.description, indent=2)
+        print('Could not unpack annotations!', indent=2)
+        return False
+    except IndexError:
+        print(hit.description, indent=2)
+        print('Could not unpack annotations!', indent=2)
+        return False
+    id_lst = ''.join(pat.findall(top_anno))
+    if id_lst:
+        _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+        hit_symbol = id_list_ids[0][0]
+        if stat == hit_symbol:
+            return True
+    else:
+        return False
 
 
+def count_reciprocal_best_hits(recblast_out):
+    from collections import Counter
+    from recblast_MP import id_search
+    pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
+    species_counters = {}
+    for species, species_dict in recblast_out.items():
+        species_counters[species] = Counter()
+        for query, query_dict in species_dict.items():
+            try:
+                rc_out = query_dict['recblast_results']
+            except KeyError:
+                print('No entries in recblast_results for query {0} in species {1}'.format(query, species))
+                continue
+            for hit in rc_out:
+                try:
+                    hit_split = hit.description.split('|-|')
+                    target_id = hit_split[0]
+                    annotations = hit_split[1]
+                except ValueError:
+                    print(hit.description, indent=2)
+                    print('Could not unpack annotations!', indent=2)
+                    continue
+                except IndexError:
+                    print(hit.description, indent=2)
+                    print('Could not unpack annotations!', indent=2)
+                    continue
+                id_lst = ''.join(pat.findall(annotations))
+                if id_lst:
+                    _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+                    hit_symbol = id_list_ids[0][0]
+                else:
+                    print('No annotations found for record {0} in species {1}, query {2}'.format(hit.name,
+                                                                                                 species,
+                                                                                                 query))
+                    continue
 
+                if query == hit_symbol:
+                    species_counters[species].update({query:1})
+    return species_counters
+
+
+def export_count_as_csv(rec_hit_counter_dict, filename='RecBlastCount'):
+    # First get a list of all the genes, period.
+    allgenes = []
+    for species, species_counter in rec_hit_counter_dict.items():
+        for key, value in species_counter.items():
+            if key in allgenes:
+                continue
+            else:
+                allgenes.append(key)
+    # Next, make a dict with a tuple of counts per species
+
+    genedict = {gene: tuple((rec_hit_counter_dict[species][gene]
+                             for species in rec_hit_counter_dict.keys())) for
+                gene in allgenes}
+    all_lines = ['Gene\t'+'\t'.join([species for species in rec_hit_counter_dict.keys()])+'\n']
+    all_lines += ['{Gene}\t{counts_str}\n'.format(Gene=key,counts_str='\t'.join([str(i) for i in value]))
+                  for key, value in genedict.items()]
+    with open(filename+'.tsv', 'w') as outf:
+        outf.writelines(all_lines)
+
+def count_reciprocal_best_hits_from_pandas(pandas_df):
+
+    from recblast_MP import id_search
+    from io import StringIO
+    from Bio import SeqIO
+    pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
+    spec_list = list(pandas_df.target_species.unique())
+    species_counters = {}
+    for species in spec_list:
+        species_counters[species] = Counter()
+        species_results = pandas_df.loc[pandas_df['target_species']==species]
+        query_list = list(species_results.query_name.unique())
+        for query in query_list:
+            print(query)
+            query_results = species_results.loc[species_results['query_name']==query].ix[:,5:-1]
+            rc_out=[]
+            for i, d in query_results.iterrows():
+                rc_out += d.tolist()
+            # Annoying shunt
+            rc_out_asfasta = '\n'.join(['>'+i for i in rc_out if i is not None])
+            tmp = StringIO(rc_out_asfasta)
+            rc_out = SeqIO.parse(tmp, 'fasta')
+            for hit in rc_out:
+                try:
+                    hit_split = hit.description.split('|-|')
+                    id_lst = ''.join(pat.findall(hit_split[1]))
+                except ValueError:
+                    print(hit.description, indent=2)
+                    print('Could not unpack annotations!', indent=2)
+                    continue
+                if id_lst:
+                    _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+                    hit_symbol = id_list_ids[0][0]
+                else:
+                    print('No annotations found for record {0} in species {1}, query {2}'.format(hit.name,
+                                                                                                 species,
+                                                                                                 query))
+                    continue
+                if query == hit_symbol:
+                    species_counters[species].update({query:1})
+    return species_counters
+
+
+def sqlite_to_pandas(sql_file, table_name):
+    import pandas as pd
+    import sqlite3
+
+    conn = sqlite3.connect(sql_file)
+    df = pd.read_sql_query("select * from {0};".format(table_name), conn)
+    return df
+
+
+def filter_hits_pandas(pandas_df):
+    from recblast_MP import id_search
+    from Bio import SeqIO
+    from io import StringIO
+    def filter_func(row):
+        qrec = row.query_record
+        qrec = SeqIO.read(StringIO(qrec), 'fasta')
+        min_len = 0.25 * len(qrec)
+        intro = row.iloc[0:6].tolist()
+        hits = row.iloc[5:-1].tolist()
+        new_hits = []
+        for hit in hits:
+
+            if hit == 'NA':
+                new_hits.append(None)
+                continue
+            elif hit is not None:
+                tmp = '>' + hit
+            else:
+                new_hits.append(None)
+                continue
+            hit = SeqIO.read(StringIO(tmp), 'fasta')
+            id_lst = hit.id
+            _, id_list_ids, seq_range, _ = id_search(id_lst, id_type='brute', verbose=0)
+            hit_symbol = ''.join(id_list_ids[0])
+            try:
+                seq_range = seq_range[hit_symbol]
+            except KeyError:
+                new_hits.append(None)
+                continue
+            seq_len = abs(int(seq_range[1]) - int(seq_range[0]))
+            new_hits.append(hit.description if seq_len >= min_len else None)
+        full = intro + new_hits
+        return full
+    return pandas_df.apply(filter_func, axis=1)
+
+
+class DataIntegratorParser(object):
+    def __init__(self, file):
+        transtab = str.maketrans('!@#$%^&*();:.,\'\"/\\?<>|[]{}-=+', '_____________________________')
+        if isinstance(file, str):
+            self.file = Path(file)
+            assert self.file.exists(), file + ' is an invalid file path or does not exist!'
+            assert self.file.is_file(), file + ' is not a valid file!'
+        elif isinstance(file, Path):
+            assert self.file.exists(), str(file) + ' is an invalid file path or does not exist!'
+            assert self.file.is_file(), str(file) + ' is not a valid file!'
+        else:
+            raise TypeError('File must be either a str or Path object!')
+        self.regions = []
+        with self.file.open() as f:
+            for index, line in enumerate(f):
+                line = line.strip()
+                if index == 0:
+                    self.header = line.lstrip('# ')
+                    continue
+                elif line.startswith('# region='):
+                    region = line.lstrip('# region=').translate(transtab)
+                    if getattr(self, region, None) is None:
+                        self.regions.append(region)
+                        setattr(self, region, [])
+                    continue
+                elif line.startswith('#') and not line.startswith('# '):
+                    cnames = line.lstrip('#').translate(transtab)
+                    ColNames = namedtuple('ColNames', cnames.split('\t'))
+                    self.colnames = ColNames._fields
+                    continue
+                elif line.startswith ('# No data'):
+                    newitem = getattr(self, region, []) + [ColNames(*[None]*len(self.colnames))]
+                    setattr(self, region, newitem)
+                    continue
+                else:
+                    try:
+                        newitem = getattr(self, region, []) + [ColNames(*line.split('\t'))]
+                        setattr(self, region, newitem)
+                    except NameError as err:
+                        raise NameError(str(err) + '\nParser encountered a line of data before either the column names '
+                                                   'or the genomic region was declared in the file!')
+                    except TypeError:
+                        print(line, file=sys.stderr)
+                        raise
+                    continue
+
+    def rename_regions_via_bedfile(self, bedfile):
+        transtab = str.maketrans('!@#$%^&*();:.,\'\"/\\?<>|[]{}-=+', '_____________________________')
+        if isinstance(bedfile, str):
+            self.bedfile = Path(bedfile)
+            assert self.bedfile.exists(), bedfile + ' is an invalid file path or does not exist!'
+            assert self.bedfile.is_file(), bedfile + ' is not a valid file!'
+        elif isinstance(bedfile, Path):
+            assert self.bedfile.exists(), str(bedfile) + ' is an invalid file path or does not exist!'
+            assert self.bedfile.is_file(), str(bedfile) + ' is not a valid file!'
+        else:
+            raise TypeError('File must be either a str or Path object!')
+        bed_trans = {}
+        with self.bedfile.open() as f:
+            for line in f:
+                line = line.strip().split('\t')
+                bed_trans['{0}_{1}_{2}'.format(line[0], str(int(line[1])+1), line[2])] = line[3].translate(transtab)
+        self.regions = []
+        for oldid in bed_trans:
+            self.regions.append(bed_trans[oldid])
+            setattr(self, bed_trans[oldid], getattr(self, oldid, []))
+            delattr(self, oldid)
+
+    def count_stats_per_record(self, attr_name):
+        counts = OrderedDict()
+        for region in sorted(self.regions):
+            rec = getattr(self, region)
+            c = Counter([getattr(r, attr_name) for r in rec])
+            counts[region] = c
+        return counts
+
+    def __iter__(self):
+        for region in self.regions:
+            yield getattr(self, region)
+
+    def __str__(self):
+        string = ''
+        for region in self.regions:
+            content = getattr(self, region)
+            string += "{0}:\t {1} ... {2} ({3})\n".format(region,
+                                                          content[0][0],
+                                                          content[-1][0],
+                                                          len(content))
+        return string
+
+
+def read_bed(bedfile, key_col = 3):
+    """Returns a dict using the given 0-indexed key_column"""
+    d = {}
+    with open(bedfile) as bed:
+        for line in bed:
+            items = line.strip().split('\t')
+            if isinstance(key_col, slice):
+                key = tuple(items[key_col])
+                d[key] = items
+            else:
+                d[items[key_col]] = items
+    return d
+
+
+def drop_overlaps_bed(bedfile):
+    from itertools import product
+    d = bedfile if isinstance(bedfile, dict) else read_bed(bedfile, key_col=slice(0,3))
+    d_new = []
+    dlocs = {}
+    for loc in d.keys():
+        if loc[0] in dlocs.keys():
+            dlocs[loc[0]].append([int(loc[1]), int(loc[2])])
+        else:
+            dlocs[loc[0]] = [[int(loc[1]), int(loc[2])]]
+    for k, v in dlocs.items():
+        if len(v) > 1:
+            v = [sorted(i) for i in v]
+            # comparison matrix
+            t = [[max(v[i][0], j[0]) <= min(v[i][1], j[1]) for j in v] for i in range(0, len(v))]
+            # set diagonal identities to False
+            for index in range(0,len(t)):
+                t[index][index] = False
+            # sum per column of matrix
+            t_sums = [sum(i) for i in zip(*t)]
+            # Select only items which have a zero in the t_sums index
+            filtered_v = [v[i] for i in range(0,len(t_sums)) if t_sums[i] == 0]
+            d_new += [(k, str(i[0]), str(i[1])) for i in filtered_v]
+        else:
+            try:
+                v = v[0]
+                d_new.append((k, str(v[0]), str(v[1])))
+            except Exception:
+                print(k, v)
+                raise
+    filtered_d = {}
+    for item in d_new:
+        if item in d.keys():
+            filtered_d[item] = d[item]
+        elif (item[0], item[2], item[1]) in d.keys():
+            filtered_d[(item[0], item[2], item[1])] = d[(item[0], item[2], item[1])]
+        else:
+            print(item)
+            raise Exception
+    return filtered_d
 
 
