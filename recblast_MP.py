@@ -1485,7 +1485,7 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
          re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for generic ID
          re.compile('(chr)([| :_]?)(\w*\d*[.|_\-]?\d*)\s*(.*)'),    # regex for chr
          re.compile(':(\d+)-(\d+)'),  # regex for sequence range
-         re.compile('(\w+)([| :_]?)(\[?:?\d+\]?)(.*)'),     # regex for assembly
+         re.compile('(\w+)([| :_]?)\[?(:?\d+-?\d+)\]?(.*)'),     # regex for assembly
          re.compile('(\S+)(.*)'), # regex for gene symbol
          re.compile('\([-+0N]\)'),  # regex for strand
          ]
@@ -1654,14 +1654,17 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
                 print('Appending {} to id list!'.format(item_parts[0][0:3]))
             id_list_ids.append(item_parts[0][0:3])
             if bool(p[5].findall(id_rec)):
+                if verbose > 1:
+                    print('Found sequence delimiters in IDs!', indent=indent)
+                item_id = ''.join(p[6].findall(id_rec)[0][0:3])
                 sr_tuple = p[5].findall(id_rec)[0]
                 if bool(p[8].findall(id_rec)[0]):
                     strand = p[8].findall(id_rec)[0]
                 else:
                     strand = '(N)'
-                seq_range[''.join(p[6].findall(id_rec)[0][0:3])] = (sr_tuple[0], sr_tuple[1], strand)
+                seq_range[item_id] = (sr_tuple[0], sr_tuple[1], strand)
                 if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
+                    print('Seq range: ', seq_range[item_id], indent=indent)
         else:
             found_id = False
     elif id_type == 'symbol':
@@ -2415,7 +2418,7 @@ class RecBlast(object):
             if verbose > 1:
                 print('Since blat was selecting, searching for appropriate .2bit file for blat...', indent=indent)
             blat_2bit = get_searchdb(search_type=blast_type_1, species=target_species, db_loc=BLASTDB,
-                                    verbose=verbose, indent=indent+1)
+                                     verbose=verbose, indent=indent+1)
             fw_blast_db = Path(BLASTDB, blat_2bit+'.2bit').absolute()
             fw_blast_db = str(fw_blast_db) if fw_blast_db.is_file() else None
             if fw_blast_db is None:
@@ -2523,7 +2526,7 @@ class RecBlast(object):
             if verbose > 1:
                 print('Since blat was selecting, setting fw_id_db equal to fw_blast_db', indent=indent)
             blat_2bit = get_searchdb(search_type=blast_type_1, species=target_species, db_loc=BLASTDB,
-                                    verbose=verbose, indent=indent+1)
+                                     verbose=verbose, indent=indent+1)
             fw_id_db = Path(BLASTDB, blat_2bit+'.2bit').absolute()
             fw_id_db = str(fw_id_db) if fw_id_db.is_file() else None
             if fw_id_db is None:
@@ -2555,7 +2558,7 @@ class RecBlast(object):
                 server = None
                 if verbose:
                     print('Beginning Fetchseq!', indent=indent)
-            # Note: BioSQL is NOT thread-safe! Throws tons of errors if executed with more than one thread!
+                    # Note: BioSQL is NOT thread-safe! Throws tons of errors if executed with more than one thread!
                 seq_dict, missing_items = fetchseqMP(ids=f_id_out_list, species=target_species, delim='\t',
                                                      id_type='brute', server=server, source=fw_source,
                                                      db=fw_id_db, host=host, driver=driver,
@@ -2582,8 +2585,9 @@ class RecBlast(object):
             for item in f_id_ranked:
                 seq_dict[item[0]].features[0].qualifiers['score'] = item[2]
                 allitems = ''.join([str(i) for i in item])
-                if verbose >2:
-                    print(allitems)
+                if verbose >3:
+                    print('allitems:', indent=indent)
+                    print(allitems, indent=indent+1)
                 id_list_ids = id_search(allitems, verbose=verbose, indent=indent+1)[1]
                 if verbose > 3:
                     print('f-id-ranked: ', indent=indent)
@@ -2592,21 +2596,27 @@ class RecBlast(object):
                 if verbose:
                     print('Sorting Sequence Dict into ordered list...', indent=indent)
                 for otherkey, otheritem in seq_dict.items():
+                    print(id_list_ids)
                     print(id_list_ids[0], indent=indent+1)
                     print(otheritem.description, indent=indent+1)
                     if ''.join([str(i) for i in id_list_ids[0]]) in otheritem.description:
                         recblast_sequence.append(otheritem)
-
+                    else:
+                        print('Something went wrong with the search!')
+                        print('Item ', ''.join([str(i) for i in id_list_ids[0]]),
+                              ' from id_search was not found in the corresponding item description!')
+                        return rc_container_full
         else:
             err = 'No SeqDict was returned for record {0} in process {1}!'.format(''.join((self.target_species,
                                                                                            self.seq_record.id)),
-                                                                                   proc_id)
+                                                                                  proc_id)
             print(err)
             raise Exception(err)
         if not isinstance(recblast_sequence, list):
             recblast_sequence = [recblast_sequence]
         rc_container['recblast_unanno'] = recblast_sequence if recblast_sequence != list() else [SeqRecord('')]
         if recblast_sequence == list():
+            print('Error! "recblast_sequence" came back empty!')
             return rc_container_full
         if verbose:
             print('Preparing for Reverse BLAST...', indent=indent)
@@ -2614,7 +2624,7 @@ class RecBlast(object):
             if verbose:
                 print("Entry {} in unannotated RecBlast Hits:\n".format(entry_record.id), indent=indent+1)
                 for item in [entry_record.id, entry_record.description, entry_record.seq[0:10] + '...' +
-                             entry_record.seq[-1]]:
+                        entry_record.seq[-1]]:
                     print(item, indent=indent+2)
             output_paths['reverse_blast_output'].append(
                 Path("{0}_recblast_out".format(target_species).replace(' ', '_') +
@@ -2740,8 +2750,8 @@ class RecBlast(object):
                 print('Best Hit Reciprocal BLAST was selected, ending Reverse BLASTS after first annotation!',
                       indent=indent)
                 entry_record.description += '|-|' + reverse_blast_annotations[0] if \
-                                                    isinstance(reverse_blast_annotations, list) \
-                                                    else reverse_blast_annotations
+                    isinstance(reverse_blast_annotations, list) \
+                    else reverse_blast_annotations
             if verbose > 3:
                 print(entry_record, indent=indent+2)
         if hit_name_only:
