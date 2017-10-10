@@ -14,6 +14,7 @@ from io import StringIO
 from operator import itemgetter
 from pathlib import Path
 from time import sleep
+from datetime import datetime
 
 import dill as pickle
 import multiprocess as multiprocessing
@@ -619,47 +620,6 @@ def format_range(seqrange, addlength, indent, verbose):
     return (newrange[0], newrange[1], strand)
 
 
-def RBC_load(RBC_file, SHA256_checksum, compressed=True):
-    def _load(RBC_file, compressed, SHA256_checksum):
-        from _pickle import UnpicklingError
-        fmethod = bz2.BZ2File if compressed else open
-        with fmethod(RBC_file, 'rb', buffering=0) as f:
-            f.seek(-32,2)
-            csum = f.read()
-            f.seek(0,0)
-            if SHA256_checksum != 'ignore' and csum != SHA256_checksum:
-                raise Exception('SHA256 checksums do not match!')
-            while True:
-                try:
-                    yield pickle.load(f)
-                except EOFError:
-                    break
-                except UnpicklingError:
-                    yield f.read()
-    return sum((RecBlastContainer(i[0], **i[2]) for i in _load(RBC_file,
-                                                               compressed,
-                                                               SHA256_checksum) if all([isinstance(i[0], str),
-                                                                                       isinstance(i[2], dict)]
-                                                                                       )))
-
-
-def RBC_dump(RBC, filename='RBC', compressed=True):
-    sha256 = hashlib.sha256()
-    fmethod = bz2.BZ2File if compressed else open
-    suffix = '.pbz2' if compressed else 'p'
-    with fmethod(filename+suffix, 'wb', buffering=0) as f:
-        for c in RBC:
-            s = pickle.dumps(c, protocol=pickle.HIGHEST_PROTOCOL)
-            f.write(s)
-            sha256.update(s)
-        RBC_checksum = sha256.digest()
-        f.write(RBC_checksum)
-    return RBC_checksum
-
-
-
-
-
 class RecBlastContainer(dict):
     """RecBlastContainer class containing all intermediary and final RecBlast outputs."""
     def __init__(self, target_species, query_record, **kwargs):
@@ -667,32 +627,33 @@ class RecBlastContainer(dict):
         if isinstance(query_record, SeqIO.SeqRecord):
             self[target_species] = {query_record.id: dict(proc_id=kwargs.pop('proc_id', str()),
                                                           version=kwargs.pop('version', __version__),
-                                                            query_record=kwargs.pop('query_record', query_record),
-                                                            query_species=kwargs.pop('query_species',str()),
-                                                            forward_blast=kwargs.pop('forward_blast',
-                                                                                     dict(blast_results=BioBlastRecord,
-                                                                                          blast_errors='')),
-                                                            forward_ids=kwargs.pop('forward_ids',
-                                                                                   dict(ids=list(),
-                                                                                        missing_ids=list(),
-                                                                                        pretty_ids=list())),
-                                                            recblast_unanno=kwargs.pop('recblast_unanno', list()),
-                                                            reverse_blast=kwargs.pop('reverse_blast',
-                                                                                     dict(blast_results=BioBlastRecord,
-                                                                                          blast_errors='')),
-                                                            reverse_ids=kwargs.pop('reverse_ids',
-                                                                                   dict(ids=list(),
-                                                                                        missing_ids=list(),
-                                                                                        pretty_ids=list())),
-                                                            recblast_results=kwargs.pop('recblast_results', list()),
-                                                            output_paths=kwargs.pop('output_paths',
-                                                                                    dict(forward_blast_output=Path(),
-                                                                                         forward_id_score_output=Path(),
-                                                                                         recblast_output_unanno=Path(),
-                                                                                         reverse_blast_output=list(),
-                                                                                         recblast_output=Path(),
-                                                                                         blast_nohits=Path()
-                                                                                         ))
+                                                          run_time=kwargs.pop('run_time',0),
+                                                          query_record=kwargs.pop('query_record', query_record),
+                                                          query_species=kwargs.pop('query_species',str()),
+                                                          forward_blast=kwargs.pop('forward_blast',
+                                                                                   dict(blast_results=BioBlastRecord,
+                                                                                        blast_errors='')),
+                                                          forward_ids=kwargs.pop('forward_ids',
+                                                                                 dict(ids=list(),
+                                                                                      missing_ids=list(),
+                                                                                      pretty_ids=list())),
+                                                          recblast_unanno=kwargs.pop('recblast_unanno', list()),
+                                                          reverse_blast=kwargs.pop('reverse_blast',
+                                                                                   dict(blast_results=BioBlastRecord,
+                                                                                        blast_errors='')),
+                                                          reverse_ids=kwargs.pop('reverse_ids',
+                                                                                 dict(ids=list(),
+                                                                                      missing_ids=list(),
+                                                                                      pretty_ids=list())),
+                                                          recblast_results=kwargs.pop('recblast_results', list()),
+                                                          output_paths=kwargs.pop('output_paths',
+                                                                                  dict(forward_blast_output=Path(),
+                                                                                       forward_id_score_output=Path(),
+                                                                                       recblast_output_unanno=Path(),
+                                                                                       reverse_blast_output=list(),
+                                                                                       recblast_output=Path(),
+                                                                                       blast_nohits=Path()
+                                                                                       ))
                                                           )}
         elif isinstance(query_record, dict):
             self[target_species] = query_record
@@ -749,44 +710,12 @@ class RecBlastContainer(dict):
             del self['__dict__']
 
         if species is None:
-            rc=[]
-            species = list(self.keys())
-            n_species = len(species)
-            if n_proc > n_species:
-                n_pool = n_species
-                n_sub_pool = int(n_proc/n_species)
-            else:
-                n_pool = n_proc
-                n_sub_pool = 0
-            """
-            Pool = multiprocessing.Pool(n_pool)
-            tmp = dict(replace_internal=False, n_proc=n_sub_pool)
-            tmp.update(**kwargs)
-            rc_handle = Pool.starmap_async(partial(self.result_filter, FUN), product(species, query, repeat(tmp)))
-            rc = rc_handle.get()
-            Pool.close()
-            """
-
-            for spec in species:
-                rc.append(self.result_filter(FUN=FUN, *args, species=spec, query=query, replace_internal=False,
-                                             n_proc=n_sub_pool, **kwargs))
-
+            rc = (self.result_filter(FUN=FUN, *args, species=spec, query=query, replace_internal=False,
+                                     **kwargs) for spec in self.keys())
             return sum(rc)
         elif query is None:
-            rc=[]
-            query = list(self[species].keys())
-            n_pool=n_proc
-            n_sub_pool=1
-            """
-            Pool = multiprocessing.Pool(n_pool)
-            rc_handle = Pool.map_async(partial(self.result_filter, FUN=FUN, *args, species=species,
-                                               replace_internal=False, n_proc=n_sub_pool, **kwargs), query)
-            rc = rc_handle.get()
-            Pool.close()
-            """
-            for q in query:
-                rc.append(self.result_filter(FUN=FUN, *args, species=species, query=q, replace_internal=False,
-                                             **kwargs))
+            rc = (self.result_filter(FUN=FUN, *args, species=species, query=q, replace_internal=False,
+                                     **kwargs) for q in self[species].keys())
             return sum(rc)
         else:
             if replace_internal:
@@ -811,7 +740,7 @@ class RecBlastContainer(dict):
                                                                           self[species][query]['recblast_results']))
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
-    def result_map(self, FUN, *args, species = None, query = None, ** kwargs):
+    def result_map(self, FUN, *args, species = None, query = None, **kwargs):
         replace_internal = kwargs.pop('replace_internal', True)
         n_proc = kwargs.pop('n_proc', 1)
 
@@ -819,43 +748,12 @@ class RecBlastContainer(dict):
             del self['__dict__']
 
         if species is None:
-            rc = []
-            species = list(self.keys())
-            n_species = len(species)
-            if n_proc > n_species:
-                n_pool = n_species
-                n_sub_pool = int(n_proc / n_species)
-            else:
-                n_pool = n_proc
-                n_sub_pool = 0
-            """
-            Pool = multiprocessing.Pool(n_pool)
-            tmp = dict(replace_internal=False, n_proc=n_sub_pool)
-            tmp.update(**kwargs)
-            rc_handle = Pool.starmap_async(partial(self.result_filter, FUN), product(species, query, repeat(tmp)))
-            rc = rc_handle.get()
-            Pool.close()
-            """
-
-            for spec in species:
-                rc.append(self.result_map(FUN=FUN, *args, species=spec, query=query, replace_internal=False,
-                                          n_proc=n_sub_pool, **kwargs))
-
+            rc = (self.result_map(FUN=FUN, *args, species=spec, query=query,
+                                  replace_internal=False, **kwargs) for spec in self.keys())
             return sum(rc)
         elif query is None:
-            rc = []
-            query = list(self[species].keys())
-            n_pool = n_proc
-            n_sub_pool = 1
-            """
-            Pool = multiprocessing.Pool(n_pool)
-            rc_handle = Pool.map_async(partial(self.result_filter, FUN=FUN, *args, species=species,
-                                               replace_internal=False, n_proc=n_sub_pool, **kwargs), query)
-            rc = rc_handle.get()
-            Pool.close()
-            """
-            for q in query:
-                rc.append(self.result_map(FUN=FUN, *args, species=species, query=q, replace_internal=False, **kwargs))
+            rc = (self.result_map(FUN=FUN, *args, species=species,
+                                  query=q, replace_internal=False, **kwargs) for q in self[species].keys())
             return sum(rc)
         else:
             if replace_internal:
@@ -888,43 +786,12 @@ class RecBlastContainer(dict):
             del self['__dict__']
 
         if species is None:
-            rc = []
-            species = list(self.keys())
-            n_species = len(species)
-            if n_proc > n_species:
-                n_pool = n_species
-                n_sub_pool = int(n_proc / n_species)
-            else:
-                n_pool = n_proc
-                n_sub_pool = 0
-            """
-            Pool = multiprocessing.Pool(n_pool)
-            tmp = dict(replace_internal=False, n_proc=n_sub_pool)
-            tmp.update(**kwargs)
-            rc_handle = Pool.starmap_async(partial(self.result_filter, FUN), product(species, query, repeat(tmp)))
-            rc = rc_handle.get()
-            Pool.close()
-            """
-
-            for spec in species:
-                rc.append(self.result_reduce(FUN=FUN, *args, species=spec, query=query, replace_internal=False,
-                                             n_proc=n_sub_pool, **kwargs))
-
+            rc = (self.result_reduce(FUN=FUN, *args, species=spec, query=query, replace_internal=False,
+                                     **kwargs) for spec in self.keys())
             return sum(rc)
         elif query is None:
-            rc = []
-            query = list(self[species].keys())
-            n_pool = n_proc
-            n_sub_pool = 1
-            """
-            Pool = multiprocessing.Pool(n_pool)
-            rc_handle = Pool.map_async(partial(self.result_filter, FUN=FUN, *args, species=species,
-                                               replace_internal=False, n_proc=n_sub_pool, **kwargs), query)
-            rc = rc_handle.get()
-            Pool.close()
-            """
-            for q in query:
-                rc.append(self.result_reduce(FUN=FUN, *args, species=species, query=q, replace_internal=False, **kwargs))
+            rc = (self.result_reduce(FUN=FUN, *args, species=species, query=q,
+                                     replace_internal=False, **kwargs) for q in self[species].keys())
             return sum(rc)
         else:
             if replace_internal:
@@ -1053,7 +920,9 @@ class RecBlastContainer(dict):
                         blockStarts = '.'
                     extra = []
                     if custom:
-                        extra.extend((str(feat.qualifiers[item]) for item in custom if item in feat.qualifiers.keys()))
+                        extra.append(';'.join(('{0}={1}'.format(str(item),
+                                                                str(feat.qualifiers[item])) for item \
+                                               in custom if item in feat.qualifiers.keys())))
                     items = [hit.name,
                              loc[0],
                              loc[1],
@@ -1254,6 +1123,44 @@ class RecBlastContainer(dict):
         return self
 
 
+def RBC_load(RBC_file, SHA256_checksum, compressed=True):
+    def _load(RBC_file, compressed, SHA256_checksum):
+        from _pickle import UnpicklingError
+        fmethod = bz2.BZ2File if compressed else open
+        with fmethod(RBC_file, 'rb', buffering=0) as f:
+            f.seek(-32,2)
+            csum = f.read()
+            f.seek(0,0)
+            if SHA256_checksum != 'ignore' and csum != SHA256_checksum:
+                raise Exception('SHA256 checksums do not match!')
+            while True:
+                try:
+                    yield pickle.load(f)
+                except EOFError:
+                    break
+                except UnpicklingError:
+                    yield f.read()
+    return sum((RecBlastContainer(i[0], **i[2]) for i in _load(RBC_file,
+                                                               compressed,
+                                                               SHA256_checksum) if all([isinstance(i[0], str),
+                                                                                       isinstance(i[2], dict)]
+                                                                                       )))
+
+
+def RBC_dump(RBC, filename='RBC', compressed=True):
+    sha256 = hashlib.sha256()
+    fmethod = bz2.BZ2File if compressed else open
+    suffix = '.pbz2' if compressed else 'p'
+    with fmethod(filename+suffix, 'wb', buffering=0) as f:
+        for c in RBC:
+            s = pickle.dumps(c, protocol=pickle.HIGHEST_PROTOCOL)
+            f.write(s)
+            sha256.update(s)
+        RBC_checksum = sha256.digest()
+        f.write(RBC_checksum)
+    return RBC_checksum
+
+
 class RecBlastStats(object):
     def __init__(self, RecBlastRecord):
         self.stats = {}
@@ -1262,7 +1169,6 @@ class RecBlastStats(object):
                 self.stats[(species, query)] = {}
                 self.stats[(species, query)]['query_len'] = len(record['query_record'])
         self.n_searches = sum([len(RecBlastRecord[species]) for species in RecBlastRecord.keys()])
-
 
 
 def blast(seq_record, target_species, database, filetype="fasta", blast_type='blastn',
@@ -2521,6 +2427,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
 
 class RecBlast(object):
     def __init__(self, seq_record, target_species):
+        self.starttime = datetime.now()
         self.seq_record = seq_record
         transtab = str.maketrans('!@#$%^&*();:.,\'\"/\\?<>|[]{}-=+', '_____________________________')
         self.seq_record.id = self.seq_record.id.translate(transtab)
@@ -2948,8 +2855,11 @@ class RecBlast(object):
         if recblast_sequence == list():
             recblast_sequence.append(SeqRecord(''))
         rc_container['recblast_results'] = recblast_sequence
+        run_time = str(datetime.now() - self.starttime)
+        rc_container['run_time'] = run_time
         print('PID', 'SeqName', sep='\t')
         print(proc_id, self.seq_record.id, sep='\t')
+        print('Run time: ', run_time)
         return rc_container_full
         # def run(self):
 
