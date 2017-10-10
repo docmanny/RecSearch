@@ -3,7 +3,7 @@ import re
 import subprocess
 import sqlite3
 import hashlib
-import gzip
+import bz2
 from itertools import product, repeat
 from functools import partial, reduce
 from collections import OrderedDict
@@ -618,27 +618,46 @@ def format_range(seqrange, addlength, indent, verbose):
         print('New range: {0}-{1}{2}'.format(lrange, rrange, strand), indent=indent)
     return (newrange[0], newrange[1], strand)
 
-def RBC_load(self, RBC_file, checksum_file, compressed=None):
+
+def RBC_load(RBC_file, SHA256_checksum, compressed=True):
+    def _load(RBC_file, compressed, SHA256_checksum):
+        from _pickle import UnpicklingError
+        fmethod = bz2.BZ2File if compressed else open
+        with fmethod(RBC_file, 'rb', buffering=0) as f:
+            f.seek(-32,2)
+            csum = f.read()
+            f.seek(0,0)
+            if SHA256_checksum != 'ignore' and csum != SHA256_checksum:
+                raise Exception('SHA256 checksums do not match!')
+            while True:
+                try:
+                    yield pickle.load(f)
+                except EOFError:
+                    break
+                except UnpicklingError:
+                    yield f.read()
+    return sum((RecBlastContainer(i[0], **i[2]) for i in _load(RBC_file,
+                                                               compressed,
+                                                               SHA256_checksum) if all([isinstance(i[0], str),
+                                                                                       isinstance(i[2], dict)]
+                                                                                       )))
+
+
+def RBC_dump(RBC, filename='RBC', compressed=True):
     sha256 = hashlib.sha256()
-    with open(checksum_file, 'r') as f:
-        checksum = f.readline().strip()
+    fmethod = bz2.BZ2File if compressed else open
+    suffix = '.pbz2' if compressed else 'p'
+    with fmethod(filename+suffix, 'wb', buffering=0) as f:
+        for c in RBC:
+            s = pickle.dumps(c, protocol=pickle.HIGHEST_PROTOCOL)
+            f.write(s)
+            sha256.update(s)
+        RBC_checksum = sha256.digest()
+        f.write(RBC_checksum)
+    return RBC_checksum
 
-    with open(RBC_file, 'rb', buffering=0) as f:
-        for chunk in iter(lambda: f.read(8192), b''):
-            sha256.update(chunk)
-    RBC_checksum = sha256.hexdigest()
 
-    if RBC_checksum == checksum:
-        if '.pgz' in RBC_file or compressed:
-            with gzip.open(RBC_file, 'rb') as f:
-                return pickle.load(f)
-        elif '.p' in RBC_file or compressed is False:
-            with open(RBC_file, 'rb') as f:
-                return pickle.load(f)
-        else:
-            raise Exception('Cannot tell if dump is compressed! Please use "compressed" keyword!')
-    else:
-        raise Exception('!!! Checksum of RBC pickle file does not match checksum file !!!'.upper())
+
 
 
 class RecBlastContainer(dict):
@@ -647,43 +666,33 @@ class RecBlastContainer(dict):
         super(dict, self).__init__()
         if isinstance(query_record, SeqIO.SeqRecord):
             self[target_species] = {query_record.id: dict(proc_id=kwargs.pop('proc_id', str()),
-                                                            query_record=query_record,
+                                                            query_record=kwargs.pop('query_record', query_record),
                                                             query_species=kwargs.pop('query_species',str()),
-                                                            forward_blast=dict(blast_results=kwargs.pop('blast_results',
-                                                                                                        BioBlastRecord),
-                                                                               blast_errors=kwargs.pop('blast_errors', '')),
-                                                            forward_ids=dict(ids=kwargs.pop('ids', list()),
-                                                                             missing_ids=kwargs.pop('missing_ids', list()),
-                                                                             pretty_ids=kwargs.pop('pretty_ids', list())),
+                                                            forward_blast=kwargs.pop('forward_blast',
+                                                                                     dict(blast_results=BioBlastRecord,
+                                                                                          blast_errors='')),
+                                                            forward_ids=kwargs.pop('forward_ids',
+                                                                                   dict(ids=list(),
+                                                                                        missing_ids=list(),
+                                                                                        pretty_ids=list())),
                                                             recblast_unanno=kwargs.pop('recblast_unanno', list()),
-                                                            reverse_blast=dict(blast_results=kwargs.pop('blast_results',
-                                                                                                        BioBlastRecord),
-                                                                               blast_errors=kwargs.pop('blast_errors', '')),
-                                                            reverse_ids=dict(ids=kwargs.pop('ids', list()),
-                                                                             missing_ids=kwargs.pop('missing_ids', list()),
-                                                                             pretty_ids=kwargs.pop('pretty_ids', list())),
+                                                            reverse_blast=kwargs.pop('reverse_blast',
+                                                                                     dict(blast_results=BioBlastRecord,
+                                                                                          blast_errors='')),
+                                                            reverse_ids=kwargs.pop('reverse_ids',
+                                                                                   dict(ids=list(),
+                                                                                        missing_ids=list(),
+                                                                                        pretty_ids=list())),
                                                             recblast_results=kwargs.pop('recblast_results', list()),
-                                                            output_paths=dict(forward_blast_output=kwargs.pop('forward_\
-                                                                                                               blast_output',
-                                                                                                              Path()),
-                                                                              forward_id_score_output=kwargs.pop('forward_\
-                                                                                                                  id_score_\
-                                                                                                                  output',
-                                                                                                                 Path()),
-                                                                              recblast_output_unanno=kwargs.pop('recblast_\
-                                                                                                                 output_\
-                                                                                                                 unanno',
-                                                                                                                Path()),
-                                                                              reverse_blast_output=kwargs.pop('reverse_\
-                                                                                                               blast_\
-                                                                                                               output',
-                                                                                                              list()),
-                                                                              recblast_output=kwargs.pop('recblast_output',
-                                                                                                         Path()),
-                                                                              blast_nohits=kwargs.pop('blast_nohits',
-                                                                                                      Path())
-                                                                              )
-                                                            )}
+                                                            output_paths=kwargs.pop('output_paths',
+                                                                                    dict(forward_blast_output=Path(),
+                                                                                         forward_id_score_output=Path(),
+                                                                                         recblast_output_unanno=Path(),
+                                                                                         reverse_blast_output=list(),
+                                                                                         recblast_output=Path(),
+                                                                                         blast_nohits=Path()
+                                                                                         ))
+                                                          )}
         elif isinstance(query_record, dict):
             self[target_species] = query_record
         else:
@@ -713,6 +722,20 @@ class RecBlastContainer(dict):
     def __setstate__(self, state):
         self.update(state)
         self.__dict__ = self
+
+    def __iter__(self):
+        for species in self.keys():
+            for query in self[species].keys():
+                yield (species, query, self[species][query])
+
+    def species(self):
+        return list(self.keys())
+
+    def queries(self):
+        q = []
+        _ = [q.extend(self[i].keys()) for i in self.keys()]
+        q = list(set(q))
+        return q
 
     def generate_stats(self):
         self.stats = RecBlastStats(self)
@@ -1165,29 +1188,6 @@ class RecBlastContainer(dict):
                     else:
                         nwrite += rc_out.write('\n'.join(['>{}'.format(i) for i in recblast_sequence]))
         return nwrite
-
-    def dump(self, filename='RBC', compressed=False):
-        sha256 = hashlib.sha256()
-        if compressed:
-            with gzip.open(filename+'.pgz', 'wb') as f:
-                pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
-            with open(filename + '.pgz', 'rb') as f:
-                for chunk in iter(lambda: f.read(8192), b''):
-                    sha256.update(chunk)
-            RBC_checksum = sha256.hexdigest()
-            with open(filename + '.pgz.sha256', 'w') as f:
-                f.write(RBC_checksum)
-        else:
-            with open(filename+'.p', 'wb') as f:
-                pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
-            with open(filename + '.p', 'rb') as f:
-                for chunk in iter(lambda: f.read(8192), b''):
-                    sha256.update(chunk)
-            RBC_checksum = sha256.hexdigest()
-            with open(filename + '.p.sha256', 'w') as f:
-                f.write(RBC_checksum)
-
-        return RBC_checksum
 
     def __str__(self):
         super(RecBlastContainer, self).__str__()
@@ -2954,7 +2954,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                query_species='Homo sapiens', blast_type_1='blastn', blast_type_2='blastn', local_blast_1=False,
                local_blast_2=False,
                expect=10, perc_score=0.5, perc_span=0.1, perc_ident=0.50, perc_length=0.5, megablast=True,
-               email='', run_name='default',
+               email='', run_name='default', output_loc='./RecBlast_output',
                id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50,
                passwd='', hit_name_only=False, min_mem=False,
                fw_id_db_version='auto', BLASTDB='/usr/db/blastdb', indent=0,
@@ -3126,9 +3126,9 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
     # Make output folder
     if run_name == 'default':
         date_str = dt.now().strftime('%y-%m-%d_%I-%M-%p')
-        outfolder = Path('./RecBlast_output/{0}/'.format(date_str))
+        outfolder = Path(output_loc.rstrip('/') + '/{0}/'.format(date_str))
     else:
-        outfolder = Path('./RecBlast_output/{0}/'.format(run_name))
+        outfolder = Path(output_loc.rstrip('/') + '/{0}/'.format(run_name))
     try:
         outfolder.mkdir(parents=True)
     except FileExistsError:
@@ -3147,6 +3147,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                                               "valid species-port key pairs"
 
     if isinstance(target_species, str):
+
         if target_species.lower() == 'all':
             if verbose:
                 print('Target species set to all. Searching server for all available species:')
