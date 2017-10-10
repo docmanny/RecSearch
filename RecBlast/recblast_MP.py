@@ -1,20 +1,19 @@
+import bz2
+import hashlib
 import logging
 import re
-import subprocess
 import sqlite3
-import hashlib
-import bz2
-from itertools import product, repeat
-from functools import partial, reduce
+import subprocess
 from collections import OrderedDict
 from contextlib import redirect_stdout
+from copy import deepcopy
 from datetime import datetime as dt
+from functools import partial, reduce
 from inspect import isgenerator
 from io import StringIO
 from operator import itemgetter
 from pathlib import Path
 from time import sleep
-from copy import deepcopy
 
 import dill as pickle
 import multiprocess as multiprocessing
@@ -28,7 +27,8 @@ from Bio.SeqRecord import SeqRecord
 from BioSQL import BioSeqDatabase
 from BioSQL.BioSeq import DBSeqRecord
 
-from Auxilliary import print, ProgressBar, merge_ranges, translate_annotation
+from RecBlast import print, ProgressBar, merge_ranges, __version__
+from RecBlast.Auxilliary import translate_annotation
 
 
 def _percent_identity_searchio(hit, is_protein=True):
@@ -666,6 +666,7 @@ class RecBlastContainer(dict):
         super(dict, self).__init__()
         if isinstance(query_record, SeqIO.SeqRecord):
             self[target_species] = {query_record.id: dict(proc_id=kwargs.pop('proc_id', str()),
+                                                          version=kwargs.pop('version', __version__),
                                                             query_record=kwargs.pop('query_record', query_record),
                                                             query_species=kwargs.pop('query_species',str()),
                                                             forward_blast=kwargs.pop('forward_blast',
@@ -985,6 +986,7 @@ class RecBlastContainer(dict):
 
     def _write_bed(self, file_loc, filename, **kwargs):
         col = kwargs.pop('col', 12)
+        custom = kwargs.pop('custom', None)
         nwrite = 0
         for species in self.keys():
             bed = []
@@ -1049,11 +1051,13 @@ class RecBlastContainer(dict):
                         blockStarts = str(feat.qualifiers['blockStarts'])
                     except KeyError:
                         blockStarts = '.'
-
+                    extra = []
+                    if custom:
+                        extra.extend((str(feat.qualifiers[item]) for item in custom if item in feat.qualifiers.keys()))
                     items = [hit.name,
                              loc[0],
                              loc[1],
-                             str(query+'_'+str(index)),
+                             str(query + '_' + str(index)),
                              score,
                              loc[2],
                              thickStart,
@@ -1062,6 +1066,7 @@ class RecBlastContainer(dict):
                              blockCount,
                              blockSizes,
                              blockStarts]
+                    items += extra
                     items = [str(i) for i in items][0:col]
                     line = '\t'.join(items) + '\n'
                     bed.append(line)
@@ -1148,6 +1153,7 @@ class RecBlastContainer(dict):
         # Example row
         # seqid\tRecBlast\tduplicated_pseudogene,supported_by_sequence_similarity\tstart\tend\t0\t+\t0\t
         nwrite = 0
+        source = 'RecBlast_MP: ' + __version__
 
         return nwrite
 
@@ -3026,7 +3032,8 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
         raise TypeError('Verbose must be either be an integer greater than or equal to zero, or a number of v\'s equal '
                         'to the desired level of verbosity')
     if verbose:
-        print('BioPython version: ', bp_version)
+        print('RecBlast version: ', __version__)
+        print('Using BioPython version: ', bp_version)
         print('Beginning RecBlastMP!')
     if verbose == 1:
         print('Basic verbose mode active. Will print only essential commentary.')

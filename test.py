@@ -2,13 +2,13 @@ import os
 from io import StringIO
 
 import pytest
+import recblast_MP as rb
 from Bio.Blast.Record import Blast as BioBlastRecord
 from Bio.SeqRecord import SeqRecord
 # from pytest_mock import mocker
 from BioSQL.BioSeq import DBSeqRecord
 
-import Auxilliary as aux
-import recblast_MP as rb
+from RecBlast import Auxilliary as aux
 
 try:
     BLASTDB = os.environ['BLASTDB']

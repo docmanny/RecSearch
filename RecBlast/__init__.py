@@ -6,6 +6,9 @@
 
 https://www.vazquez.bio/RecBlast
 """
+import sys
+import re
+from builtins import print as _print
 
 __version__ = 'v1.3dev'
 
