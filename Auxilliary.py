@@ -121,7 +121,6 @@ def massively_translate_fasta(SeqIter):
     return all_genes
 
 
-
 def translate_annotation(annotation, orig='refseq', to='symbol', species='human'):
     """
     Converts a name from one type to another using mygene.
@@ -409,11 +408,20 @@ def count_dups(recblast_out):
             anno_count_dict[annotation] = len(target_list)
     return species_anno_target_dict, species_anno_count_dict
 
+
+def sum_stat_filter_RBHs(query_record):
+    """ Summary Statistic function for filter_RBH. Requires setting recblast_object='query_record'
+
+    :param query_record:
+    :return:
+    """
+    return query_record.name
+
+
 def filter_RBHs(hit, stat):
     """
-    Convenience function for use with result_filter() method of RecBlastContainer.
-    :param hit:
-    :return:
+    Convenience function for use with result_filter() method of RecBlastContainer. Requires
+    "summary_statistic=sum_stat_filter_RBHs"
     """
     from recblast_MP import id_search
     pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
@@ -437,6 +445,31 @@ def filter_RBHs(hit, stat):
             return True
     else:
         return False
+
+"""
+def stat_filter_many_to_one(drop_overlaps_bed_dict):
+    Used by filter_many_to_one for the list of hits to keep.
+
+    :param drop_overlaps_bed_dict:
+    :return:
+    
+    keep = ['{0}:{1}-{2}'.format(i[0], i[1], i[2]) for i in drop_overlaps_bed_dict.keys()]
+    return keep
+
+
+def filter_many_to_one(hit, keep):
+     Filters out many-to-one hits in a RBC. Requires stat_filter_many_to_one output as "keep" kwarg.
+
+    :param hit:
+    :param stat: output of stat_filter_many_to_one(drop_overlaps_bed_dict)
+    :return:
+    
+    if hit.id in keep:
+        return True
+    else:
+        return False
+"""
+
 
 
 def count_reciprocal_best_hits(recblast_out):
@@ -735,4 +768,26 @@ def drop_overlaps_bed(bedfile):
             raise Exception
     return filtered_d
 
+
+def calc_effective_copy_number_by_coverage(query_record):
+    # get list of ranges
+    if len(query_record['recblast_results']) == 0:
+        return None
+    else:
+        p = re.compile(':(\d+)-(\d+)')
+        raw_ranges = [p.findall(hit.description) for hit in query_record['recblast_results']]
+        ranges = []
+        for r in raw_ranges:
+            try:
+                rng = (int(r[1][0]), int(r[1][1]))
+                ranges.append(sorted(rng))
+            except IndexError:
+                continue
+        coverage = list(merge_ranges(ranges))
+        sum_coverage = sum([i[1] - i[0] for i in coverage])
+        if sum_coverage == 0:
+            return 0
+        else:
+            sum_nuc = sum([sum([sum([s in range(r[0], r[1]) for s in range(i[0], i[1])]) for i in ranges]) for r in coverage])
+            return sum_nuc/sum_coverage
 
