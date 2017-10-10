@@ -3343,6 +3343,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
     """
     # Combine all the rc_out records into one big one and return it:
     recblast_out = sum([rc for rc in recblast_out if rc != {}])
+    progbar.done()
     return recblast_out
     #########################################################################
 

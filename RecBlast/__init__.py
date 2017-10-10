@@ -7,8 +7,10 @@
 https://www.vazquez.bio/RecBlast
 """
 import sys
+from datetime import datetime
 import re
 from builtins import print as _print
+
 
 __version__ = 'v1.3dev'
 
@@ -17,12 +19,12 @@ __version__ = 'v1.3dev'
 class ProgressBar(object):
     """Adapted from Romuald Brunet at StackExchange"""
     DEFAULT = 'Progress: %(bar)s %(percent)3d%%'
-    FULL = '%(bar)s %(current)d/%(total)d (%(percent)3d%%) %(remaining)d to go'
+    FULL = '[%(curtime)s]%(bar)s %(current)d/%(total)d (%(percent)3d%%) %(remaining)d to go'
 
     def __init__(self, total, width=100, fmt=DEFAULT, symbol='=',
                  output=sys.stdout):
         assert len(symbol) == 1
-
+        self.starttime = datetime.now()
         self.total = total
         self.width = width
         self.symbol = symbol
@@ -32,12 +34,14 @@ class ProgressBar(object):
         self.current = 0
 
     def __call__(self):
+        curtime = datetime.now().strftime('%H:%M:%S')
         percent = self.current / float(self.total)
         size = int(self.width * percent)
         remaining = self.total - self.current
         bar = '[' + self.symbol * size + ' ' * (self.width - size) + ']'
 
         args = {
+            'curtime': curtime,
             'total': self.total,
             'bar': bar,
             'current': self.current,
@@ -47,9 +51,11 @@ class ProgressBar(object):
         print('\r' + self.fmt % args, file=self.output, end='')
 
     def done(self):
+        self.endtime = datetime.now()
+        self.totaltime = self.endtime - self.starttime
         self.current = self.total
         self()
-        print('', file=self.output)
+        print('Total time: {}'.format(str(self.totaltime)), file=self.output)
 
 
 def print(*objects, indent=0, markup='', **print_kwargs):
