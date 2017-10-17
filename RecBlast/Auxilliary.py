@@ -8,6 +8,7 @@ import mygene
 from RecBlast import print, merge_ranges
 
 
+
 def cleanup_fasta_input(handle, filetype='fasta', write=True):
     from Bio import SeqIO
     oldlist = [i for i in SeqIO.parse(handle, filetype)]
@@ -339,66 +340,97 @@ def count_dups(recblast_out):
     return species_anno_target_dict, species_anno_count_dict
 
 
-def sum_stat_filter_RBHs(query_record):
-    """ Summary Statistic function for filter_RBH. Requires setting recblast_object='query_record'
+class FilterRBHs(object):
+    def __init__(self, **kwargs):
+        """Convenience class for use with RecBlastContainer.result_filter(). Removes non-Reciprocal Best Hits from RBC.
+        """
+        self._recblast_object = 'query_record'
+        self.args = {'FUN': self.fun, 'summary_statistic': self._stat, 'recblast_object': self._recblast_object}
+        for k,v in kwargs.items():
+            self.args[k] = v
 
-    :param query_record:
-    :return:
-    """
-    return query_record.name
+    def _stat(self, query_record):
+        """ Summary Statistic function for filter_RBH. Requires setting recblast_object='query_record'
+
+        :param query_record:
+        :return:
+        """
+        return query_record.name
+    def fun(self, hit, stat):
+
+        from RecBlast.recblast_MP import id_search
+        pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
+        try:
+            hit_split = hit.description.split('|-|')
+            target_id = hit_split[0]
+            top_anno = hit_split[1]
+        except ValueError:
+            print(hit.description, indent=2)
+            print('Could not unpack annotations!', indent=2)
+            return False
+        except IndexError:
+            print(hit.description, indent=2)
+            print('Could not unpack annotations!', indent=2)
+            return False
+        id_lst = ''.join(pat.findall(top_anno))
+        if id_lst:
+            _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+            hit_symbol = id_list_ids[0][0]
+            if stat == hit_symbol:
+                return True
+        else:
+            return False
 
 
-def filter_RBHs(hit, stat):
-    """
-    Convenience function for use with result_filter() method of RecBlastContainer. Requires
-    "summary_statistic=sum_stat_filter_RBHs"
-    """
+def map_ranges(hit):
+    """ Convenience function for RBC.results_map(). Replaces results with a tup of result descriptions and loci."""
     from RecBlast.recblast_MP import id_search
-    pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
-    try:
-        hit_split = hit.description.split('|-|')
-        target_id = hit_split[0]
-        top_anno = hit_split[1]
-    except ValueError:
-        print(hit.description, indent=2)
-        print('Could not unpack annotations!', indent=2)
-        return False
-    except IndexError:
-        print(hit.description, indent=2)
-        print('Could not unpack annotations!', indent=2)
-        return False
-    id_lst = ''.join(pat.findall(top_anno))
-    if id_lst:
-        _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
-        hit_symbol = id_list_ids[0][0]
-        if stat == hit_symbol:
-            return True
-    else:
-        return False
-
-"""
-def stat_filter_many_to_one(drop_overlaps_bed_dict):
-    Used by filter_many_to_one for the list of hits to keep.
-
-    :param drop_overlaps_bed_dict:
-    :return:
-    
-    keep = ['{0}:{1}-{2}'.format(i[0], i[1], i[2]) for i in drop_overlaps_bed_dict.keys()]
-    return keep
+    _, h_id, h_range, _ = id_search(hit.description)
+    h_id_joint = ''.join(h_id[0])
+    h_range = h_range[h_id_joint]
+    h_start = h_range[0]
+    h_end = h_range[1]
+    h_strand = h_range[2]
+    h_d = (hit.description, h_id[0][0], h_start, h_end, h_strand)
+    return h_d
 
 
-def filter_many_to_one(hit, keep):
-     Filters out many-to-one hits in a RBC. Requires stat_filter_many_to_one output as "keep" kwarg.
+def RBC_drop_many_to_one_hits(RBC):
+    from datetime import datetime
+    time_list = [('start',datetime.now())]
+    loci_dict_RBC = {}
+    for species, query, rec in RBC.result_map(map_ranges):
+        time_list.append((''.join((species,query)), datetime.now()))
+        r = rec['recblast_results']
+        for index, hit in enumerate(r):
+            loci_dict_RBC[(hit[1], hit[2], hit[3], ''.join((query, str(index))))] = (species, query, index)
+    time_list.append(('result_map_end', datetime.now()))
+    print(time_list[-1])
+    time_list.append(('drop_overlaps_bed', datetime.now()))
+    filtered_loci_dict_RBC = drop_overlaps_bed(loci_dict_RBC)
+    time_list.append(('drop_overlaps_bed_end', datetime.now()))
+    print(time_list[-1])
+    filter_dict = {}
+    for hit_loc in filtered_loci_dict_RBC.values():
+        time_list.append(('reorder_dict', datetime.now()))
+        species, query, index = hit_loc
+        if (species, query) in filter_dict.keys():
+            filter_dict[(species, query)].append(index)
+        else:
+            filter_dict[(species, query)] = [index]
+    time_list.append(('reorder_dict_done', datetime.now()))
+    print(time_list[-1])
+    for (species, query), indexes  in filter_dict.items():
+        time_list.append(('Filtering', datetime.now()))
+        for hit_index, hit in enumerate(RBC[species][query]['recblast_results']):
+            if hit_index in indexes:
+                continue
+            else:
+                del RBC[species][query]['recblast_results'][hit_index]
+    time_list.append(('done', datetime.now()))
+    return time_list
 
-    :param hit:
-    :param stat: output of stat_filter_many_to_one(drop_overlaps_bed_dict)
-    :return:
-    
-    if hit.id in keep:
-        return True
-    else:
-        return False
-"""
+
 
 
 
@@ -651,9 +683,15 @@ def read_bed(bedfile, key_col = 3):
             items = line.strip().split('\t')
             if isinstance(key_col, slice):
                 key = tuple(items[key_col])
-                d[key] = items
+                if key in d.keys():
+                    raise KeyError('Duplicate keys in dictionary!')
+                else:
+                    d[key] = items
             else:
-                d[items[key_col]] = items
+                if items[key_col] in d.keys():
+                    raise KeyError('Duplicate keys in dictionary!')
+                else:
+                    d[items[key_col]] = items
     return d
 
 
@@ -663,12 +701,12 @@ def drop_overlaps_bed(bedfile):
     dlocs = {}
     for loc in d.keys():
         if loc[0] in dlocs.keys():
-            dlocs[loc[0]].append([int(loc[1]), int(loc[2])])
+            dlocs[loc[0]].append([int(loc[1]), int(loc[2]), loc[3]])
         else:
-            dlocs[loc[0]] = [[int(loc[1]), int(loc[2])]]
+            dlocs[loc[0]] = [[int(loc[1]), int(loc[2]), loc[3]]]
     for k, v in dlocs.items():
         if len(v) > 1:
-            v = [sorted(i) for i in v]
+            v = [sorted(i[0:2])+[i[2]] for i in v]
             # comparison matrix
             t = [[max(v[i][0], j[0]) <= min(v[i][1], j[1]) for j in v] for i in range(0, len(v))]
             # set diagonal identities to False
@@ -678,11 +716,11 @@ def drop_overlaps_bed(bedfile):
             t_sums = [sum(i) for i in zip(*t)]
             # Select only items which have a zero in the t_sums index
             filtered_v = [v[i] for i in range(0,len(t_sums)) if t_sums[i] == 0]
-            d_new += [(k, str(i[0]), str(i[1])) for i in filtered_v]
+            d_new += [(k, str(i[0]), str(i[1]), i[2]) for i in filtered_v]
         else:
             try:
                 v = v[0]
-                d_new.append((k, str(v[0]), str(v[1])))
+                d_new.append((k, str(v[0]), str(v[1]), v[2]))
             except Exception:
                 print(k, v)
                 raise

@@ -703,20 +703,29 @@ class RecBlastContainer(dict):
         self.stats = RecBlastStats(self)
 
     def result_filter(self, FUN, *args, species=None, query=None, **kwargs):
-        replace_internal = kwargs.pop('replace_internal', True)
-        n_proc = kwargs.pop('n_proc', 1)
-
+        replace_internal = kwargs.pop('replace_internal', False)
         if '__dict__' in self.keys():
             del self['__dict__']
 
         if species is None:
-            rc = (self.result_filter(FUN=FUN, *args, species=spec, query=query, replace_internal=False,
-                                     **kwargs) for spec in self.keys())
-            return sum(rc)
+            if replace_internal:
+                for spec in self.keys():
+                    self.result_filter(FUN=FUN, *args, species=spec, query=query,
+                                    replace_internal=replace_internal, **kwargs)
+            else:
+                rc = (self.result_filter(FUN=FUN, *args, species=spec, query=query,
+                                      replace_internal=replace_internal, **kwargs) for spec in self.keys())
+                return sum(rc)
         elif query is None:
-            rc = (self.result_filter(FUN=FUN, *args, species=species, query=q, replace_internal=False,
-                                     **kwargs) for q in self[species].keys())
-            return sum(rc)
+            if replace_internal:
+                for q in self[species].keys():
+                    self.result_filter(FUN=FUN, *args, species=species, query=q, replace_internal=replace_internal,
+                                    **kwargs)
+            else:
+                rc = (self.result_filter(FUN=FUN, *args, species=species,
+                                      query=q, replace_internal=replace_internal,
+                                      **kwargs) for q in self[species].keys())
+                return sum(rc)
         else:
             if replace_internal:
                 self[species][query]['recblast_results'] = list(filter(partial(FUN, *args, **kwargs),
@@ -734,27 +743,36 @@ class RecBlastContainer(dict):
                     except KeyError:
                         raise KeyError('Record {0}, {1} has no key {2}'.format(species, query, recblast_object))
                     query_record[query]['recblast_results'] = list(filter(partial(FUN, *args, stat=stat, **kwargs),
-                                                                          self[species][query]['recblast_results']))
+                                                                       self[species][query]['recblast_results']))
                 else:
                     query_record[query]['recblast_results'] = list(filter(partial(FUN, *args, **kwargs),
-                                                                          self[species][query]['recblast_results']))
+                                                                       self[species][query]['recblast_results']))
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
     def result_map(self, FUN, *args, species = None, query = None, **kwargs):
-        replace_internal = kwargs.pop('replace_internal', True)
-        n_proc = kwargs.pop('n_proc', 1)
-
+        replace_internal = kwargs.pop('replace_internal', False)
         if '__dict__' in self.keys():
             del self['__dict__']
 
         if species is None:
-            rc = (self.result_map(FUN=FUN, *args, species=spec, query=query,
-                                  replace_internal=False, **kwargs) for spec in self.keys())
-            return sum(rc)
+            if replace_internal:
+                for spec in self.keys():
+                    self.result_map(FUN=FUN, *args, species=spec, query=query,
+                                    replace_internal=replace_internal, **kwargs)
+            else:
+                rc = (self.result_map(FUN=FUN, *args, species=spec, query=query,
+                                      replace_internal=replace_internal, **kwargs) for spec in self.keys())
+                return sum(rc)
         elif query is None:
-            rc = (self.result_map(FUN=FUN, *args, species=species,
-                                  query=q, replace_internal=False, **kwargs) for q in self[species].keys())
-            return sum(rc)
+            if replace_internal:
+                for q in self[species].keys():
+                    self.result_map(FUN=FUN, *args, species=species, query=q, replace_internal=replace_internal,
+                                    **kwargs)
+            else:
+                rc = (self.result_map(FUN=FUN, *args, species=species,
+                                      query=q, replace_internal=replace_internal,
+                                      **kwargs) for q in self[species].keys())
+                return sum(rc)
         else:
             if replace_internal:
                 self[species][query]['recblast_results'] = list(map(partial(FUN, *args, **kwargs),
@@ -779,20 +797,29 @@ class RecBlastContainer(dict):
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
     def result_reduce(self, FUN, *args, species = None, query = None, ** kwargs):
-        replace_internal = kwargs.pop('replace_internal', True)
-        n_proc = kwargs.pop('n_proc', 1)
-
+        replace_internal = kwargs.pop('replace_internal', False)
         if '__dict__' in self.keys():
             del self['__dict__']
 
         if species is None:
-            rc = (self.result_reduce(FUN=FUN, *args, species=spec, query=query, replace_internal=False,
-                                     **kwargs) for spec in self.keys())
-            return sum(rc)
+            if replace_internal:
+                for spec in self.keys():
+                    self.result_reduce(FUN=FUN, *args, species=spec, query=query,
+                                    replace_internal=replace_internal, **kwargs)
+            else:
+                rc = (self.result_reduce(FUN=FUN, *args, species=spec, query=query,
+                                      replace_internal=replace_internal, **kwargs) for spec in self.keys())
+                return sum(rc)
         elif query is None:
-            rc = (self.result_reduce(FUN=FUN, *args, species=species, query=q,
-                                     replace_internal=False, **kwargs) for q in self[species].keys())
-            return sum(rc)
+            if replace_internal:
+                for q in self[species].keys():
+                    self.result_reduce(FUN=FUN, *args, species=species, query=q, replace_internal=replace_internal,
+                                    **kwargs)
+            else:
+                rc = (self.result_reduce(FUN=FUN, *args, species=species,
+                                      query=q, replace_internal=replace_internal,
+                                      **kwargs) for q in self[species].keys())
+                return sum(rc)
         else:
             if replace_internal:
                 self[species][query]['recblast_results'] = list(reduce(partial(FUN, *args, **kwargs),
@@ -810,10 +837,10 @@ class RecBlastContainer(dict):
                     except KeyError:
                         raise KeyError('Record {0}, {1} has no key {2}'.format(species, query, recblast_object))
                     query_record[query]['recblast_results'] = list(reduce(partial(FUN, *args, stat=stat, **kwargs),
-                                                                          self[species][query]['recblast_results']))
+                                                                       self[species][query]['recblast_results']))
                 else:
                     query_record[query]['recblast_results'] = list(reduce(partial(FUN, *args, **kwargs),
-                                                                          self[species][query]['recblast_results']))
+                                                                       self[species][query]['recblast_results']))
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
     def write(self, file_loc=None, filetype='fasta', **kwargs):
@@ -3350,7 +3377,7 @@ def blat(seq_record, target_species, database, blat_type, indent, BLASTDB, verbo
             print('Error details:\n')
             raise
 """
-
+"""
 class RecBlastControl(object):
     def __init__(self, file, header=True):
         self.options_list = []
@@ -3433,3 +3460,7 @@ class RecBlastControl(object):
                 print(err)
                 continue
         return rc_all
+"""
+
+def calibrate_RBB():
+    pass
