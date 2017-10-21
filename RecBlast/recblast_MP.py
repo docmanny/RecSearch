@@ -600,8 +600,12 @@ def format_range(seqrange, addlength, indent, verbose):
         rrange = -1
     try:
         strand = seqrange[2]
-    except KeyError:
+    except IndexError:
         strand = '(0)'
+    try:
+        score = seqrange[3]
+    except IndexError:
+        score = 0
     if verbose > 1:
         print('Original range: {0}-{1}{2}'.format(lrange, rrange, strand), indent=indent)
         print('Adding {0} steps to the beginning and {1} steps to the end of the sequence!'.format(lextend,
@@ -617,7 +621,7 @@ def format_range(seqrange, addlength, indent, verbose):
     newrange = tuple(map(lambda x, y: int(x) + y, (lrange, rrange), (lextend, rextend)))
     if verbose > 2:
         print('New range: {0}-{1}{2}'.format(lrange, rrange, strand), indent=indent)
-    return (newrange[0], newrange[1], strand)
+    return (newrange[0], newrange[1], strand, score)
 
 
 class RecBlastContainer(dict):
@@ -1597,222 +1601,103 @@ def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='access
 
 
 def id_search(id_rec, id_type='brute', verbose=True, indent=0):
-    # Define the regex functions
-    p = [re.compile('(gi)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for gi
-         re.compile('([AXNYZ][MWRCPGTZ]|ref)([| _:]+)(\d\d+\.?\d*)(.*)'),  # regex for refseq accession
-         re.compile('(scaffold)([| _:]+)(\d+\.?\d*)(.*)'),    # regex for scaffolds
-         re.compile('(id)([| :_]+)(\d\d+\.?\d*)(.*)'),  # regex for generic ID
-         re.compile('(chr)([| :_]?)(\w*\d*[.|_\-]?\d*)\s*(.*)'),    # regex for chr
-         re.compile(':(\d+)-(\d+)'),  # regex for sequence range
-         re.compile('(\w+)([| :_]?)\[?(:?\d+-?\d+)\]?(.*)'),     # regex for assembly
-         re.compile('(\S+)(.*)'), # regex for gene symbol
-         re.compile('\([-+0N]\)'),  # regex for strand
-         ]
+    """
 
-    id_list_ids = []  # Initialized list of IDs
-    seq_range = {}  # Initialized dict of sequence ranges
+    EX:
+    gi =
+    refseq_accession = 'XP_010883249.1'
+    scaffold =
+    id =
+    chr =
+    seq_range =
+    assembly1 = 'KN678312.1	[:9787-29116](+)	478'
+    assembly2 = 'KN678312.1	[:9787-29116](+)	478'
+    gene_symbol =
+    strand = '(+)'
+
+    :param id_rec:
+    :param id_type:
+    :param verbose:
+    :param indent:
+    :return:
+    """
+    # Define the regex functions
+    p = {'gi': re.compile('(\Agi[| _:]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for gi
+         'accession': re.compile('(\A[AXNYZ][MWRCPGTZ][| _:]+[0-9.]+|\Aref[| _:]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for refseq accession
+         'scaffold': re.compile('(\Ascaffold)([| _:]+)(\d+\.?\d*)(.*)'),    # regex for scaffolds
+         'id': re.compile('(\Aid[| _:]*[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for generic ID
+         'chr': re.compile('(\Achr[| _:]*[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),    # regex for chr
+         'assembly': re.compile('(\A[A-Za-z]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for assembly
+         'symbol': re.compile('(\A\S+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for gene symbol
+         'seq_range': re.compile(':?(\d+)-(\d+)'),  # regex for sequence range
+         'strand': re.compile('(\([-+0N]\))'),  # regex for strand
+         'score': re.compile('\d\d*')
+         }
+
+    #id_list_ids = [  # Initialized list of IDs
+    #seq_range = []  # Initialized dict of sequence ranges
 
     # Begin search:
     if verbose > 1:
-        print('ID File Loaded, performing regex search for identifiers...', indent=indent)
-        print('ID Specified as: ', id_type, indent=indent)
+        print('ID Loaded, performing regex search for identifiers...', indent=indent)
+        print('ID type: ', id_type, indent=indent)
     if id_type == 'brute':
-        if bool(p[1].findall(id_rec)):
-            id_type = 'accession'
-            if verbose > 1:
-                print(p[1].findall(id_rec), indent=indent)
-        elif bool(p[0].findall(id_rec)):
-            id_type = 'gi'
-            if verbose > 1:
-                print(p[0].findall(id_rec), indent=indent)
-        elif bool(p[2].findall(id_rec)):
-            id_type = 'scaffold'
-            if verbose > 1:
-                print(p[2].findall(id_rec), indent=indent)
-        elif bool(p[3].findall(id_rec)):
-            id_type = 'id'
-            if verbose > 1:
-                print(p[3].findall(id_rec))
-        elif bool(p[4].findall(id_rec)):
-            id_type = 'chr'
-            if verbose > 1:
-                print(p[4].findall(id_rec))
-        elif bool(p[6].findall(id_rec)):
-            id_type = 'assembly'
-            if verbose > 1:
-                print(p[6].findall(id_rec))
-        elif bool(p[7].findall(id_rec)):
-            id_type = 'symbol'
-            if verbose > 1:
-                print(p[7].findall(id_rec))
-        else:
-            raise Exception('Couldn\'t identify the id!')
-        if verbose > 1:
-            print('Brute Force was set, tested strings for all pre-registered IDs. ID was selected as type ',
-                  id_type, indent=indent)
-    if id_type == 'gi':
-        if bool(p[0].findall(id_rec)):
-            found_id = True
-            if verbose > 1:
-                print('Successfully found GI numbers, compiling list!', indent=indent)
-            item_parts = p[0].findall(id_rec)
-            if verbose > 1:
-                print('Item:\t', item_parts, indent=indent)
-            id_list_ids.append(item_parts[0][0:3])
-            if bool(p[5].findall(id_rec)):
-                # Seq_range will be a list of tuples where the second element is the range, and the first
-                # is the ID. This way, the function accommodates sequences with a subrange and sequences without a
-                # subrange.
-                sr_tuple = p[5].findall(id_rec)[0]
-                if bool(p[8].findall(id_rec)[0]):
-                    strand = p[8].findall(id_rec)[0]
-                else:
-                    strand = '(N)'
-                seq_range[''.join(p[0].findall(id_rec)[0][0:3])] = (sr_tuple[0], sr_tuple[1], strand)
+        for tmp_type in ['accession', 'gi', 'scaffold', 'id', 'chr', 'assembly', 'symbol']:
+            if bool(p[tmp_type].findall(id_rec)):
                 if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
-        else:
-            found_id = False
-    elif id_type == 'accession':
-        if bool(p[1].findall(id_rec)):
-            found_id = True
-            if verbose > 1:
-                print('Successfully found accession numbers, compiling list!', indent=indent)
-            item_parts = p[1].findall(id_rec)
-            if verbose > 1:
-                print('Item:\t', item_parts, indent=indent)
-            id_list_ids.append(item_parts[0][0:3])
-            if bool(p[5].findall(id_rec)):
-                sr_tuple = p[5].findall(id_rec)[0]
-                if bool(p[8].findall(id_rec)[0]):
-                    strand = p[8].findall(id_rec)[0]
-                else:
-                    strand = '(N)'
-                seq_range[''.join(p[1].findall(id_rec)[0][0:3])] = (sr_tuple[0], sr_tuple[1], strand)
-                if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
-        else:
-            found_id = False
-    elif id_type == 'id':
-        if bool(p[3].findall(id_rec)):
-            found_id = True
-            if verbose > 1:
-                print('Successfully found ID numbers, compiling list!', indent=indent)
-            item_parts = p[3].findall(id_rec)
-            if verbose > 1:
-                print('Item:\t', item_parts, indent=indent)
-            id_list_ids.append(item_parts[0][0:3])
-            if bool(p[5].findall(id_rec)):
-                sr_tuple = p[5].findall(id_rec)[0]
-                if bool(p[8].findall(id_rec)[0]):
-                    strand = p[8].findall(id_rec)[0]
-                else:
-                    strand = '(N)'
-                seq_range[''.join(p[3].findall(id_rec)[0][0:3])] = (sr_tuple[0], sr_tuple[1], strand)
-                if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
-        else:
-            found_id = False
-    elif id_type == 'scaffold':
-        if bool(p[2].findall(id_rec)):
-            found_id = True
-            if verbose > 1:
-                print('Successfully found ID numbers, compiling list!', indent=indent)
-            item_parts = p[2].findall(id_rec)
-            if verbose > 1:
-                print('Item:\t', item_parts, indent=indent)
-            if verbose > 2:
-                print('Appending {} to id list!'.format(item_parts[0][0:3]))
-            id_list_ids.append(item_parts[0][0:3])
-            if bool(p[5].findall(id_rec)):
-                if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
-                item_id = ''.join(p[2].findall(id_rec)[0][0:3])
-                sr_tuple = p[5].findall(id_rec)[0]
-                if bool(p[8].findall(id_rec)[0]):
-                    strand = p[8].findall(id_rec)[0]
-                else:
-                    strand = '(N)'
-                seq_range[item_id] = (sr_tuple[0], sr_tuple[1], strand)
-                if verbose > 1:
-                    print('Seq range: ', seq_range[item_id], indent=indent)
-        else:
-            found_id = False
-    elif id_type == 'chr':
-        if bool(p[4].findall(id_rec)):
-            found_id = True
-            if verbose > 1:
-                print('Successfully found ID numbers, compiling list!', indent=indent)
-            item_parts = p[4].findall(id_rec)
-            if verbose > 1:
-                print('Item:\t', item_parts, indent=indent)
-                print(item_parts[0])
-                for i, item in enumerate(item_parts[0]):
-                    print(i, item)
-            id_list_ids.append(item_parts[0][0:3])
-            if bool(p[5].findall(id_rec)):
-                sr_tuple = p[5].findall(id_rec)[0]
-                if bool(p[8].findall(id_rec)[0]):
-                    strand = p[8].findall(id_rec)[0]
-                else:
-                    strand = '(N)'
-                seq_range[''.join(p[4].findall(id_rec)[0][0:3])] = (sr_tuple[0], sr_tuple[1], strand)
-                if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
-        else:
-            found_id = False
-    elif id_type == 'assembly':
-        if bool(p[6].findall(id_rec)):
-            found_id = True
-            if verbose > 1:
-                print('Successfully found ID numbers, compiling list!', indent=indent)
-            item_parts = p[6].findall(id_rec)
-            if verbose > 1:
-                print('Item:\t', item_parts, indent=indent)
-            if verbose > 2:
-                print('Appending {} to id list!'.format(item_parts[0][0:3]))
-            id_list_ids.append(item_parts[0][0:3])
-            if bool(p[5].findall(id_rec)):
-                if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
-                item_id = ''.join(p[6].findall(id_rec)[0][0:3])
-                sr_tuple = p[5].findall(id_rec)[0]
-                if bool(p[8].findall(id_rec)[0]):
-                    strand = p[8].findall(id_rec)[0]
-                else:
-                    strand = '(N)'
-                seq_range[item_id] = (sr_tuple[0], sr_tuple[1], strand)
-                if verbose > 1:
-                    print('Seq range: ', seq_range[item_id], indent=indent)
-        else:
-            found_id = False
-    elif id_type == 'symbol':
-        if bool(p[7].findall(id_rec)):
-            found_id = True
-            if verbose > 1:
-                print('Successfully found ID numbers, compiling list!', indent=indent)
-            item_parts = p[7].findall(id_rec)
-            if verbose > 1:
-                print('Item:\t', item_parts, indent=indent)
-                print(item_parts[0])
-                for i, item in enumerate(item_parts[0]):
-                    print(i, item)
-            id_list_ids.append(item_parts[0][0:3])
-            if bool(p[5].findall(id_rec)):
-                sr_tuple = p[5].findall(id_rec)[0]
-                if bool(p[8].findall(id_rec)[0]):
-                    strand = p[8].findall(id_rec)[0]
-                else:
-                    strand = '(N)'
-                seq_range[''.join(p[7].findall(id_rec)[0][0:3])] = (sr_tuple[0], sr_tuple[1], strand)
-                if verbose > 1:
-                    print('Found sequence delimiters in IDs!', indent=indent)
+                    print('Brute Force was set, tested strings for all pre-registered IDs.', indent=indent)
+                    print('ID was selected as type {0}!'.format(tmp_type), indent=indent+1)
+                return id_search(id_rec=id_rec, id_type=tmp_type, verbose=verbose, indent=indent)
+        raise Exception('Couldn\'t identify the id!')
     else:
-        found_id = False
-    if found_id:
-        return p, id_list_ids, seq_range, id_type
-    else:
-        raise Exception('ID Error', 'Could not get ID!')
+        try:
+            item_parts = p[id_type].findall(id_rec)[0]
+            print(item_parts)
+            if verbose > 1:
+                print('Successfully found {0}, compiling list!'.format(id_type), indent=indent)
+                print('Item:\t', '\t'.join(item_parts), indent=indent+1)
+            item_parts = list(item_parts)
+            item_parts[0] = item_parts[0] if not isinstance(item_parts[0], str) else ''.join(item_parts[0])
+
+            if item_parts[2]:
+                try:
+                    sr_tuple = p['seq_range'].findall(item_parts[2])[0]
+                    if verbose > 1:
+                        print('Found sequence delimiters in IDs!', indent=indent)
+                        print(sr_tuple, indent=indent+1)
+                except IndexError:
+                    raise Exception('A positive match for a sequence range was found '
+                                    '({0}), yet no hits were identified! Confirm that '
+                                    'the regex is correct and try again!'.format(item_parts[2]))
+                else:
+                    if verbose > 1:
+                        print('Found sequence delimiters in IDs!', indent=indent)
+            else:
+                sr_tuple = (0,-1)
+            if item_parts[4]:
+                try:
+                    strand = p['strand'].findall(item_parts[4])[0]
+                except IndexError:
+                    strand = '(N)'
+                try:
+                    score = p['score'].findall(item_parts[4])[0]
+                except IndexError:
+                    score = 0
+            else:
+                strand = '(N)'
+                score = '0'
+            if verbose > 1:
+                if strand != '(N)':
+                    print('Strand info found: {0}'.format(strand), indent=indent)
+                if score != '0':
+                    print('Score info found: {0}'.format(score), indent=indent)
+
+            seq_range = (int(sr_tuple[0]), int(sr_tuple[1]), strand, int(score))
+            return p, item_parts[0], seq_range, id_type
+
+        except IndexError:
+            raise Exception('ID Error', 'Could not identify patterns in {0} with id_type={1}, '
+                                        'is the id_search sequence correct?'.format(id_rec, id_type))
 
 
 class FetchSeqMP(multiprocessing.Process):
@@ -1854,54 +1739,68 @@ class FetchSeqMP(multiprocessing.Process):
                 print('All FetchSeqs in Queue completed!', indent=self.indent)
                 break
             try:
-                seq_dict, miss_items = fs_instance(passwd=self.passwd, id_type=self.id_type, driver=self.driver,
-                                                   user=self.user, host=self.host, db=self.db, delim=self.delim,
-                                                   server=self.server, version=self.version, add_length=self.add_length,
-                                                   species=self.species, source=self.source, verbose=self.verbose,
-                                                   n_threads=self.n_subthreads, indent=self.indent)
+                id_item, seq, miss_items = fs_instance(passwd=self.passwd, id_type=self.id_type, driver=self.driver,
+                                                       user=self.user, host=self.host, db=self.db, delim=self.delim,
+                                                       server=self.server, version=self.version,
+                                                       add_length=self.add_length,
+                                                       species=self.species, source=self.source, verbose=self.verbose,
+                                                       n_threads=self.n_subthreads, indent=self.indent)
             except Exception as err:
                 print('ERROR!')
                 print(err)
-                seq_dict = dict()
+                id_item, seq = ('', '')
                 miss_items = list()
             self.id_queue.task_done()
-            self.seq_out_queue.put((seq_dict, miss_items))
+            self.seq_out_queue.put(((id_item, seq), miss_items))
         return
 
 
 class FetchSeq(object):  # The meat of the script
     def __init__(self, id_rec):
+        assert isinstance(id_rec, str), 'id_rec as received by FetchSeq class was not a string object!'
         self.id_rec = id_rec
 
     def __call__(self, delim, species, version, source, passwd, id_type, driver, user, host, db, n_threads, server,
                  verbose, add_length, indent):
-
         # out_file = Path(output_name + '.' + output_type)
+
         if verbose > 1:
             print('Full header for Entry:', indent=indent)
             print(self.id_rec, indent=indent)
 
-        p, id_list_ids, seq_range, id_type = id_search(self.id_rec, id_type=id_type, verbose=verbose)
-        id_attr_dict = {}
-        for i in id_list_ids:
-            try:
-                id_attr_dict[''.join(i[0:3])] =  (''.join(i[0:3]), i[2])
-            except IndexError:
-                id_attr_dict[''.join(i[0:3])] = (''.join(i[0:3]), 0)
-                
-        #print(seq_range)
+        p, id_item, seq_range, id_type = id_search(self.id_rec, id_type=id_type, verbose=verbose)
 
-        if verbose > 1:
-            print('ID list: ', indent=indent)
-            for index, ID_item in enumerate(id_list_ids):
-                try:
-                    print(index + 1, ': {0}    {1}'.format(''.join(ID_item),
-                                                           '-'.join(seq_range[''.join(ID_item)])), indent=indent)
-                except KeyError:
-                    print(index + 1, ': {0}    {1}'.format(''.join(ID_item), '(No Range)'), indent=indent)
+        id_item = id_item if isinstance(id_item, str) else ''.join(id_item)
+
+        if verbose > 2:
+            print('{0} {1}'.format(''.join(id_item), ' '.join((str(i) for i in seq_range))), indent=indent)
+        was_reversed = False
+        try:
+            if verbose > 1:
+                print('Seq range: ', seq_range, indent=indent)
+            assert len(seq_range) == 4, 'Seq_range returned a tuple of length != 4!!!'
+            if add_length != (0, 0):
+                seq_range = format_range(seqrange=seq_range, addlength=add_length,
+                                             indent=indent + 1,
+                                             verbose=verbose)
+            if -1 in seq_range[0:2]:
+                id_full = '{0}'.format(id_item)
+            elif seq_range[0] < seq_range[1]:
+                id_full = '{0}:{1}-{2}'.format(id_item, seq_range[0], seq_range[1])
+            elif seq_range[0] > seq_range[1]:
+                id_full = '{0}:{2}-{1}'.format(id_item, seq_range[0], seq_range[1])
+                was_reversed = True
+            else:
+                id_full = '{0}'.format(id_item)
+        except KeyError:
+            raise KeyError('Sequence {0} lacks a seq_range entry!!!'.format(id_item))
+        if verbose:
+            print('ID for query:\t', id_full, indent=indent)
+
         # Armed with the ID list, we fetch the sequences from the appropriate source
+
         if source.lower() == "entrez":
-            raise Exception('Not yet implemented, sorry!!!')
+            seq, itemnotfound = self.entrez(id_item, seq_range, indent, add_length, verbose)
         elif source.lower() == "sql":
             if verbose > 1:
                 print('Searching for sequences in local SQL db...', indent=indent)
@@ -2173,96 +2072,88 @@ class FetchSeq(object):  # The meat of the script
             return seqdict, itemsnotfound
             # SeqIO.write([seqdict[key] for key in seqdict.keys()], str(out_file), output_type)
         elif source == "2bit":
-            seqdict = {}
-            itemsnotfound = []
-            id_list = [''.join(i[0:3]) for i in id_list_ids]
-            for id in id_list:
-                was_reversed = False
-                print(seq_range[id])
-                try:
-                    seq_range[id] = format_range(seqrange=seq_range[id], addlength=add_length, indent=indent+1,
-                                                 verbose=verbose)
-                    if seq_range[id][0] < seq_range[id][1]:
-                        id_full = '{0}:{1}-{2}'.format(id, seq_range[id][0], seq_range[id][1])
-                    elif seq_range[id][0] > seq_range[id][1]:
-                        id_full = '{0}:{2}-{1}'.format(id, seq_range[id][0], seq_range[id][1])
-                        was_reversed = True
-                    else:
-                        id_full = '{0}'.format(id)
-                except KeyError:
-                    print(id, "does not have a SeqRange, continuing!", indent=indent)
-                    id_full = '{0}'.format(id)
-                else:
-                    if verbose:
-                        print('Found SeqRange, full id:\t', id_full, indent=indent)
-                    command = ["twoBitToFa", '{0}:{1}'.format(db, id_full), '/dev/stdout']
-                    if verbose > 1:
-                        print('Command:', indent=indent)
-                        print(' '.join(command), indent=indent+1)
-                twoBitToFa_handle = subprocess.check_output(command, universal_newlines=True, stdin=subprocess.PIPE,
-                                                            stderr = subprocess.PIPE)
-                if type(twoBitToFa_handle) is str:
-                    seq_out = twoBitToFa_handle
-                else:
-                    seq_out, seq_err = twoBitToFa_handle
-                    raise Exception(seq_err)
-
-                if seq_out is not None:
-                    if verbose:
-                        print('Got sequence for ', id_full, indent=indent)
-                    if verbose > 3:
-                        print(seq_out, indent=indent+1)
-                    with StringIO(seq_out) as output:
-                        seqdict[id] = SeqIO.read(output, 'fasta')
-                    try:
-                        strand = seq_range[id][2]
-                        if strand == '(-)':
-                            if verbose > 1:
-                                print('Sequence was labeled as being in the (-) direction! Reversing...',
-                                      indent=indent)
-                            seqdict[id].seq = seqdict[id].seq.reverse_complement()
-                    except KeyError:
-                        hasstrand = False
-                        seqdict[id] = seqdict[id][int(seq_range[id][0]):int(seq_range[id][1])]
-                        seqdict[id].features.append(SeqFeature.SeqFeature(type='duplicate'))
-                        seqdict[id].features[0].location = SeqFeature.FeatureLocation(int(seq_range[id][0]),
-                                                                                      int(seq_range[id][1]),
-                                                                                      strand=1)
-                    else:
-                        hasstrand = True
-                    seqdict[id].features.append(SeqFeature.SeqFeature(type='duplicate'))
-                    if hasstrand:
-                        seqdict[id].description += strand
-                        if strand == '(-)':
-
-                            if int(seq_range[id][0]) > int(seq_range[id][0]):
-                                seqdict[id].features[0].location = SeqFeature.FeatureLocation(int(seq_range[id][1]),
-                                                                                             int(seq_range[id][0]),
-                                                                                             strand=-1)
-                            else:
-                                seqdict[id].features[0].location = SeqFeature.FeatureLocation(int(seq_range[id][0]),
-                                                                                             int(seq_range[id][1]),
-                                                                                             strand=-1)
-                        else:
-                            seqdict[id].features[0].location = SeqFeature.FeatureLocation(int(seq_range[id][0]),
-                                                                                         int(seq_range[id][1]),
-                                                                                         strand=1)
-                    else:
-                        if was_reversed:
-                            seqdict[id].description += '(-)'
-                        else:
-                            seqdict[id].description += '(+)'
-                else:
-                    itemsnotfound.append(id)
-                try:
-                    seqdict[id].features[0].qualifiers['score'] = id_attr_dict[id][1]
-                    seqdict[id].name = id_attr_dict[id][0]
-                except KeyError:
-                    seqdict[id].name = id_attr_dict[id][0]
-                    seqdict[id].features[0].qualifiers['score'] = 0
-            return seqdict, itemsnotfound
+            seq, itemnotfound = self.twobit(id_full=id_full, id_item=id_item, seq_range=seq_range, db=db,
+                                            indent=indent, add_length=add_length, verbose=verbose)
         else:
             raise Exception('Not a valid database source: {}'.format(source))
+
+        try:
+            strand = seq_range[2]
+            if strand == '(-)':
+                if verbose > 1:
+                    print('Sequence was labeled as being in the (-) direction! Reversing...',
+                          indent=indent)
+                seq.seq = seq.seq.reverse_complement()
+            hasstrand = True
+        except KeyError:
+            raise KeyError('Sequence {0} lacks a seq_range entry!!!'.format(id_item))
+        except IndexError:
+            hasstrand = False
+            seq = seq[int(seq_range[0]):int(seq_range[1])]
+            seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]),
+                                                                               int(seq_range[1]),
+                                                                               strand=1)
+        seq.features.append(SeqFeature.SeqFeature(type='duplicate'))
+        if hasstrand:
+            seq.description += strand
+            if strand == '(-)':
+
+                if int(seq_range[0]) > int(seq_range[0]):
+                    seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[1]),
+                                                                                       int(seq_range[0]),
+                                                                                       strand=-1)
+                else:
+                    seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]),
+                                                                                       int(seq_range[1]),
+                                                                                       strand=-1)
+            else:
+                seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]),
+                                                                                   int(seq_range[1]),
+                                                                                   strand=1)
+        else:
+            if was_reversed:
+                seq.description += '(-)'
+            else:
+                seq.description += '(+)'
+        try:
+            seq.features[0].qualifiers['score'] = seq_range[3]
+            seq.name = id_item
+        except KeyError:
+            seq.name = id_item
+            seq.features[0].qualifiers['score'] = 0
+        return id_item, seq, itemnotfound
+
+    def entrez(self, id_item, seq_range, indent, add_length, verbose):
+        raise Exception('Search type "entrez" is not yet implemented, sorry!!!')
+
+    def twobit(self, id_full, id_item, seq_range, db, indent, add_length, verbose):
+        seq = None
+        itemsnotfound = None
+        
+        command = ["twoBitToFa", '{0}:{1}'.format(db, id_full), '/dev/stdout']
+        if verbose > 1:
+            print('Command:', indent=indent)
+            print(' '.join(command), indent=indent + 1)
+        twoBitToFa_handle = subprocess.check_output(command, universal_newlines=True, stdin=subprocess.PIPE,
+                                                    stderr=subprocess.PIPE)
+        if type(twoBitToFa_handle) is str:
+            seq_out = twoBitToFa_handle
+        else:
+            seq_out, seq_err = twoBitToFa_handle
+            raise Exception(seq_err)
+
+        if seq_out is not None:
+            if verbose:
+                print('Got sequence for ', id_full, indent=indent)
+            if verbose > 3:
+                print(str(seq_out).replace('\n', '\n' + '\t' * (indent + 1)), indent=indent + 1)
+            with StringIO(seq_out) as output:
+                seq = SeqIO.read(output, 'fasta')
+        else:
+            itemsnotfound=id_item
+                
+        return seq, itemsnotfound
+
 
 
 def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='brute', server=None, source="SQL",
@@ -2327,7 +2218,10 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
     if verbose > 1:
         print('Done!', indent=indent)
         print('Assigning FetchSeq records to queue... ', indent=indent)
-    for id_rec in ids:
+    for i, id_rec in enumerate(ids):
+        assert isinstance(id_rec, str), 'id_rec #{0} ({1}) of type {2} was not a string object!'.format(i,
+                                                                                                        id_rec,
+                                                                                                        type(id_rec))
         id_list.put(FetchSeq(id_rec=id_rec))
     for fs in fs_instances:
         id_list.put(None)
@@ -2342,7 +2236,7 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
     # for i in range(len(ids)):
     while n_jobs:
         seq, missing = results.get()
-        output_dict.update(seq)
+        output_dict[seq[0]] = seq[1]
         missing_items_list.append(missing)
         n_jobs -= 1
     if verbose > 1:
@@ -2446,7 +2340,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
                     self.rb_results_queue.put(output)
                 except Exception as err:
                     print('Woah! Something went wrong! Aborting!')
-                    print('Here\'s the error:\n', err)
+                    print('Here\'s the error:\n', type(err), err)
                     self.rb_results_queue.put(dict(error=err, proc_id=self.name))
         master_out_handle.close()
         return
@@ -2703,6 +2597,18 @@ class RecBlast(object):
 
         if seq_dict:
             for item in f_id_ranked:
+                allitems = ''.join((str(i) for i in item))
+                if verbose > 3:
+                    print('allitems:', indent=indent)
+                    print(allitems, indent=indent + 1)
+                id_list = id_search(allitems, verbose=verbose, indent=indent)[1]
+                print(id_list)
+                recblast_sequence.append(seq_dict[id_list])
+            """
+            if verbose > 3:
+                print('f-id-ranked: ', indent=indent)
+                print(id_list, indent=indent + 1)
+            for item in f_id_ranked:
                 seq_dict[item[0]].features[0].qualifiers['score'] = item[2]
                 allitems = ''.join([str(i) for i in item])
                 if verbose >3:
@@ -2720,13 +2626,7 @@ class RecBlast(object):
                     print(id_list_ids[0], indent=indent+1)
                     print(otheritem.description, indent=indent+1)
                     if ''.join([str(i) for i in id_list_ids[0]]) in otheritem.description:
-                        recblast_sequence.append(otheritem)
-                        """
-                    else:
-                        print('Something went wrong with the search!')
-                        print('Item ', ''.join([str(i) for i in id_list_ids[0]]),
-                              ' from id_search was not found in the corresponding item description!')
-                        return rc_container_full"""
+                        recblast_sequence.append(otheritem)"""
         else:
             err = 'No SeqDict was returned for record {0} in process {1}!'.format(''.join((self.target_species,
                                                                                            self.seq_record.id)),

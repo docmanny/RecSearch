@@ -2,21 +2,21 @@ import os
 from io import StringIO
 
 import pytest
-import recblast_MP as rb
 from Bio.Blast.Record import Blast as BioBlastRecord
 from Bio.SeqRecord import SeqRecord
 # from pytest_mock import mocker
 from BioSQL.BioSeq import DBSeqRecord
 
-from RecBlast import Auxilliary as aux
+import RecBlast.Auxilliary as aux
+import RecBlast.recblast_MP as rb
 
 try:
-    BLASTDB = os.environ['BLASTDB']
-    BLATDB = os.environ['BLATDB']
+    BLASTDB=os.environ['BLASTDB']
+    BLATDB=os.environ['BLATDB']
 except KeyError:
     print([key for key, _ in os.environ.items()])
-    BLASTDB = '~/db/blastdb'
-    BLATDB = '~/db/blatdb'
+    BLASTDB='~/db/blastdb'
+    BLATDB='~/db/blatdb'
 root_dir = os.getcwd()
 print('Root Dir:', root_dir)
 
@@ -34,7 +34,6 @@ def pytest_generate_tests(metafunc):
 
 def pytest_generate_tests(metafunc):
     idlist = []
-    argnames = []
     argvalues = []
     for scenario in metafunc.cls.scenarios:
         idlist.append(scenario[0])
@@ -44,7 +43,17 @@ def pytest_generate_tests(metafunc):
     metafunc.parametrize(argnames, argvalues, ids=idlist, scope="class")
 
 
+class Test_percent_identity_searchio(object):
+    scenarios = [('', {})]
+    pass
+
+
 class Test_getsearchdb(object):
+    scenarios = [('', {})]
+    pass
+
+
+class Test_blatserver(object):
     scenarios = [('', {})]
     pass
 
@@ -52,6 +61,49 @@ class Test_getsearchdb(object):
 class Test_id_ranker(object):
     scenarios = [('', {})]
     pass
+
+
+class Test_id_search(object):
+    scenarios = [('accession, brute', {'t_name':'accession, brute','id_rec':'XP_010883249.1\t[:12311235-1234123]\t(+)',
+                                'id_type':'brute', 'verbose':True, 'indent':0,
+                                       'l':[['XP_010883249.1'], {'XP_010883249.1': ('12311235', '1234123', '(+)')},
+                                            'accession']}),
+                 ('assembly, brute', {'t_name': 'accession', 'id_rec': 'KN678312.1	[:9787-29116](+)	478',
+                                       'id_type': 'brute', 'verbose': True, 'indent': 0,
+                                      'l':[['KN678312.1'], {'KN678312.1': ('9787', '29116', '(+)')},
+                                           'assembly']})
+                 ]
+    def test(self, t_name, id_rec, id_type, verbose, indent, l):
+        from re import compile
+        try:
+            p, i_l_i, s_r, i_t = rb.id_search(id_rec=id_rec, id_type=id_type, verbose=verbose, indent=indent)
+        except Exception as err:
+            # Did id_type work:
+            if id_type == 'brute':
+                if 'brute_fails' in t_name:
+                    return True
+                else:
+                    raise AssertionError('brute was not supposed to fail here!', err)
+            else:
+                if 'fails' in t_name:
+                    return True
+                else:
+                    raise AssertionError('test failed unexpectedly!', err)
+        # Type assertions
+        assert isinstance(p, dict), 'Pattern dictionary is no longer a dictionary!!!'
+        test_compile = compile('')
+        for k, v in p.items():
+            assert isinstance(v, type(test_compile)), 'Key {0} in pattern_dict has type {1}!!!'.format(k, str(type(v)))
+        assert isinstance(i_l_i, list), 'id_list_ids was not a list!'
+        assert isinstance(s_r, dict), 'seq_range was not a dict!'
+        assert isinstance(i_t, str), 'id_type was not a str!'
+        assert i_l_i == l[0], 'Function returned unexpected item!\n{0} != {1}'.format(i_l_i, l[0])
+        assert s_r == l[1], 'Function returned unexpected item!\n{0} != {1}'.format(s_r, l[1])
+        assert i_t == l[2], 'Function returned unexpected item!\n{0} != {1}'.format(i_t, l[2])
+        return True
+
+
+
 
 
 class Test_biosql_get_sub_db_names(object):
@@ -62,9 +114,9 @@ class Test_biosql_get_sub_db_names(object):
 class Test_biosql_DBSeqRecord_to_SeqRecord(object):
     """Class containing all tests related to biosql_DBSeqRecord_to_SeqRecord"""
     scenarios = [('InRecord = SeqRecord', {'inrecord': SeqRecord(seq='AATTGGCC', id='test'),
-                                           'off': False}),
+                                          'off': False}),
                  ('InRecord = DBSeqRecord; no conversion', {'inrecord': DBSeqRecord,
-                                                            'off': True}),
+                                                           'off' : True}),
                  ('InRecord = DBSeqRecord; yes conversion', {'inrecord': DBSeqRecord,
                                                              'off': False}),
                  ('InRecord = str', {'inrecord': str,
@@ -138,24 +190,22 @@ class Test_Blast(object):
                   'query_species': 'Homo sapiens',
                   'seq_record': 'CDN1B.faprt',
                   'target_species': 'Myotis lucifugus'})
-                 ]
-
+                ]
     @pytest.mark.long
     def test_search_remote_real(self, seq_record, target_species, database, query_species, blast_type, local_blast,
                                 BLASTDB=globals()['BLASTDB']):
-        results, err = rb.blast(seq_record='Test/query/{}'.format(seq_record), target_species=target_species,
-                                database=database,
+        results, err = rb.blast(seq_record='Test/query/{}'.format(seq_record), target_species=target_species, database=database,
                                 query_species=query_species, blast_type=blast_type, local_blast=local_blast,
                                 BLASTDB=BLASTDB)
         assert isinstance(results, BioBlastRecord)
-        assert err == '' or err == [] or err is None
+        assert err == '' or err == [] or err == None
 
     def test_search_local_mocked(self, mocker, seq_record, target_species, database, query_species, blast_type,
                                  local_blast, BLASTDB=globals()['BLASTDB']):
 
         file_handle = 'Test/BLAST/'
         file_handle += '{blast_type}_{local_blast}_'.format(blast_type=blast_type,
-                                                            local_blast='Local' if local_blast else 'Remote')
+                                                            local_blast='Local' if local_blast  else 'Remote')
         file_handle += '{query_species}_{target_species}_{seq_record}.xml'.format(query_species=query_species,
                                                                                   target_species=target_species,
                                                                                   seq_record=seq_record.split('.fa')[0])
@@ -172,7 +222,7 @@ class Test_Blast(object):
                                 database=database, query_species=query_species, blast_type=blast_type,
                                 local_blast=local_blast, BLASTDB=BLASTDB)
         assert isinstance(results, BioBlastRecord)
-        assert err == '' or err == [] or err is None
+        assert err == '' or err == [] or err == None
 
 
 class Test_biosql_seq_lookup_cascade(object):
@@ -304,12 +354,12 @@ class Test_RecBlastControl(object):
 class Test_count_dups(object):
     scenarios = [('Not a RecBlastContainer', {'rc_out': [dict()],
                                               'empirical_count': None}),
-                 ('Empty RBC', {'rc_out': rb.RecBlastContainer(target_species=None,
-                                                               query_record=SeqRecord(name='', seq='')),
-                                'empirical_count': {'': 0}}),
+                 ('Empty RBC',{'rc_out': rb.RecBlastContainer(target_species=None,query_record=SeqRecord(name='',
+                                                                                                         seq='')),
+                               'empirical_count': {'': 0}}),
                  ('', {}),
                  ('', {}),
-                 ('', {})]
+                 ('', {}),]
     pass
 
     def test_input(self, rc_out, empirical_count):
@@ -324,4 +374,5 @@ class Test_count_dups(object):
             pass
         else:
             count_dict = aux.count_dups(rc_out)
-        pass
+        if
+

@@ -255,11 +255,11 @@ def simple_struct(recblast_out, verbose=True):
                         print(target_id, indent=2)
                         tmp = []
                         for annotation in annotation_list:
-                            p, id_list_ids, seq_range, id_type = id_search(annotation, id_type='brute', verbose=0)
+                            p, item, seq_range, id_type = id_search(annotation, id_type='brute', verbose=0)
                             if id_type == 'symbol':
-                                tmp.append(''.join(id_list_ids[0][0]))
+                                tmp.append(item)
                             else:
-                                tmp.append(''.join(id_list_ids[0]))
+                                tmp.append(item)
                         query_dict[target_id] = tmp
                         for annotation in query_dict[target_id]:
                             print(annotation, indent=3)
@@ -374,8 +374,8 @@ class FilterRBHs(object):
             return False
         id_lst = ''.join(pat.findall(top_anno))
         if id_lst:
-            _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
-            hit_symbol = id_list_ids[0][0]
+            _, hit_symbol, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+
             if stat == hit_symbol:
                 return True
         else:
@@ -462,8 +462,8 @@ def count_reciprocal_best_hits(recblast_out):
                     continue
                 id_lst = ''.join(pat.findall(annotations))
                 if id_lst:
-                    _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
-                    hit_symbol = id_list_ids[0][0]
+                    _, hit_symbol, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+
                 else:
                     print('No annotations found for record {0} in species {1}, query {2}'.format(hit.name,
                                                                                                  species,
@@ -526,8 +526,8 @@ def count_reciprocal_best_hits_from_pandas(pandas_df):
                     print('Could not unpack annotations!', indent=2)
                     continue
                 if id_lst:
-                    _, id_list_ids, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
-                    hit_symbol = id_list_ids[0][0]
+                    _, hit_symbol, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+
                 else:
                     print('No annotations found for record {0} in species {1}, query {2}'.format(hit.name,
                                                                                                  species,
@@ -570,8 +570,7 @@ def filter_hits_pandas(pandas_df):
                 continue
             hit = SeqIO.read(StringIO(tmp), 'fasta')
             id_lst = hit.id
-            _, id_list_ids, seq_range, _ = id_search(id_lst, id_type='brute', verbose=0)
-            hit_symbol = ''.join(id_list_ids[0])
+            _, hit_symbol, seq_range, _ = id_search(id_lst, id_type='brute', verbose=0)
             try:
                 seq_range = seq_range[hit_symbol]
             except KeyError:
