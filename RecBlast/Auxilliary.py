@@ -356,7 +356,7 @@ class FilterRBHs(object):
         :return:
         """
         return query_record.name
-    def fun(self, hit, stat):
+    def fun(self, hit, stat, verbose=2):
 
         from RecBlast.recblast_MP import id_search
         pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
@@ -372,9 +372,9 @@ class FilterRBHs(object):
             print(hit.description, indent=2)
             print('Could not unpack annotations!', indent=2)
             return False
-        id_lst = ''.join(pat.findall(top_anno))
+        id_lst = pat.findall(top_anno)[0].strip()
         if id_lst:
-            _, hit_symbol, _, _ = id_search(id_lst, id_type='symbol', verbose=0)
+            _, hit_symbol, _, _ = id_search(id_lst, id_type='symbol', verbose=verbose)
 
             if stat == hit_symbol:
                 return True
@@ -386,49 +386,33 @@ def map_ranges(hit):
     """ Convenience function for RBC.results_map(). Replaces results with a tup of result descriptions and loci."""
     from RecBlast.recblast_MP import id_search
     _, h_id, h_range, _ = id_search(hit.description)
-    h_id_joint = ''.join(h_id[0])
-    h_range = h_range[h_id_joint]
     h_start = h_range[0]
     h_end = h_range[1]
     h_strand = h_range[2]
-    h_d = (hit.description, h_id[0][0], h_start, h_end, h_strand)
+    h_d = (hit.description, h_id, h_start, h_end, h_strand)
     return h_d
 
 
 def RBC_drop_many_to_one_hits(RBC):
-    from datetime import datetime
-    time_list = [('start',datetime.now())]
     loci_dict_RBC = {}
     for species, query, rec in RBC.result_map(map_ranges):
-        time_list.append((''.join((species,query)), datetime.now()))
         r = rec['recblast_results']
         for index, hit in enumerate(r):
             loci_dict_RBC[(hit[1], hit[2], hit[3], ''.join((query, str(index))))] = (species, query, index)
-    time_list.append(('result_map_end', datetime.now()))
-    print(time_list[-1])
-    time_list.append(('drop_overlaps_bed', datetime.now()))
     filtered_loci_dict_RBC = drop_overlaps_bed(loci_dict_RBC)
-    time_list.append(('drop_overlaps_bed_end', datetime.now()))
-    print(time_list[-1])
     filter_dict = {}
     for hit_loc in filtered_loci_dict_RBC.values():
-        time_list.append(('reorder_dict', datetime.now()))
         species, query, index = hit_loc
         if (species, query) in filter_dict.keys():
             filter_dict[(species, query)].append(index)
         else:
             filter_dict[(species, query)] = [index]
-    time_list.append(('reorder_dict_done', datetime.now()))
-    print(time_list[-1])
     for (species, query), indexes  in filter_dict.items():
-        time_list.append(('Filtering', datetime.now()))
         for hit_index, hit in enumerate(RBC[species][query]['recblast_results']):
             if hit_index in indexes:
                 continue
             else:
                 del RBC[species][query]['recblast_results'][hit_index]
-    time_list.append(('done', datetime.now()))
-    return time_list
 
 
 
@@ -680,6 +664,16 @@ def read_bed(bedfile, key_col = 3):
     with open(bedfile) as bed:
         for line in bed:
             items = line.strip().split('\t')
+            for i, j in enumerate(items):
+                try:
+                    new_j = int(j)
+                    items[i] = new_j
+                except ValueError:
+                    try:
+                        new_j = float(j)
+                        items[i] = new_j
+                    except ValueError:
+                        continue
             if isinstance(key_col, slice):
                 key = tuple(items[key_col])
                 if key in d.keys():
@@ -715,11 +709,11 @@ def drop_overlaps_bed(bedfile):
             t_sums = [sum(i) for i in zip(*t)]
             # Select only items which have a zero in the t_sums index
             filtered_v = [v[i] for i in range(0,len(t_sums)) if t_sums[i] == 0]
-            d_new += [(k, str(i[0]), str(i[1]), i[2]) for i in filtered_v]
+            d_new += [(k, i[0], i[1], i[2]) for i in filtered_v]
         else:
             try:
                 v = v[0]
-                d_new.append((k, str(v[0]), str(v[1]), v[2]))
+                d_new.append((k, v[0], v[1], v[2]))
             except Exception:
                 print(k, v)
                 raise
