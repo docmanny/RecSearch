@@ -584,6 +584,7 @@ def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
 
 
 def format_range(seqrange, addlength, indent, verbose):
+    assert isinstance(addlength, tuple) and len(addlength) == 2, "addlength must be a tuple of length 2!"
     try:
         lextend = -int(addlength[0])
         rextend = int(addlength[1])
@@ -848,6 +849,8 @@ class RecBlastContainer(dict):
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
     def write(self, file_loc=None, filetype='fasta', **kwargs):
+        if filetype is None:
+            return 0
         if file_loc is None:
             date_str = dt.now().strftime('%y-%m-%d_%I-%M-%p')
             file_loc = Path('./RecBlast_output/{0}/'.format(date_str)).absolute()
@@ -1542,7 +1545,7 @@ class BioSeqLookupCascade(object):
         return self.identifier, seqrec
 
 
-def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='accession', driver="psycopg2", indent=0,
+def biosql_get_record_mp(id_list, sub_db_name, passwd='', id_type='accession', driver="psycopg2", indent=0,
                          user="postgres", host="localhost", db="bioseqdb", num_proc=2, verbose=True, server=None):
     """
     
@@ -1571,6 +1574,7 @@ def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='access
     # num = multiprocessing.cpu_count() * 2
     if verbose > 2:
         print('\tStarting BioSQL_get_record_mp', indent=indent)
+    id_list = id_list if isinstance(id_list, list) else [id_list]
     num_jobs = len(id_list)
     seqdict = dict()
     getseqs = [GetSeqMP(idents, results, db=db, host=host, driver=driver, user=user, passwd=passwd,
@@ -1597,22 +1601,26 @@ def biosql_get_record_mp(sub_db_name, passwd='', id_list=list(), id_type='access
         if gs.is_alive():
             gs.join()
 
-    return seqdict
+    itemsnotfound = [i for i in id_list if i not in seqdict.keys()]
+
+    return seqdict, itemsnotfound
+    return seqdict, itemsnotfound
 
 
-def id_search(id_rec, id_type='brute', verbose=True, indent=0):
+def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex = None):
     """
 
     EX:
     gi =
     refseq_accession = 'XP_010883249.1'
-    scaffold =
+    scaffold = 'scaffold_145\t[:1033526-1034566](-)\t190
     id =
-    chr =
+    chr = 'chrX[:3047971-3259961](-)119'
     seq_range =
     assembly1 = 'KN678312.1	[:9787-29116](+)	478'
     assembly2 = 'KN678312.1	[:9787-29116](+)	478'
-    gene_symbol =
+    symbol = 'TP53'
+    symbol = 'INS [:259-568](+) (161)'
     strand = '(+)'
 
     :param id_rec:
@@ -1622,40 +1630,45 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
     :return:
     """
     # Define the regex functions
-    p = {'gi': re.compile('(\Agi[| _:]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for gi
-         'accession': re.compile('(\A[AXNYZ][MWRCPGTZ][| _:]+[0-9.]+|\Aref[| _:]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for refseq accession
-         'scaffold': re.compile('(\Ascaffold)([| _:]+)(\d+\.?\d*)(.*)'),    # regex for scaffolds
-         'id': re.compile('(\Aid[| _:]*[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for generic ID
-         'chr': re.compile('(\Achr[| _:]*[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),    # regex for chr
-         'assembly': re.compile('(\A[A-Za-z]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for assembly
-         'symbol': re.compile('(\A\S+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for gene symbol
-         'seq_range': re.compile(':?(\d+)-(\d+)'),  # regex for sequence range
-         'strand': re.compile('(\([-+0N]\))'),  # regex for strand
-         'score': re.compile('\d\d*')
-         }
-
-    #id_list_ids = [  # Initialized list of IDs
-    #seq_range = []  # Initialized dict of sequence ranges
+    p = dict(gi = re.compile('(\Agi[| _:]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for gi
+             accession = re.compile('(\A[AXNYZ][MWRCPGTZ][| _:]+[0-9.]+|\Aref[| _:]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for refseq accession
+             scaffold = re.compile('(\Ascaffold[| _:]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),    # regex for scaffolds
+             id = re.compile('(\Aid[| _:]*[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for generic ID
+             chr = re.compile('(\Achr[| _:]*[A-Za-z0-9.]+)([| \t:_])??\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),    # regex for chr
+             assembly = re.compile('(\A[A-Za-z]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for assembly
+             assembly_broad = re.compile('(\b[ALYB]+[0-9.]+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for assembly
+             symbol = re.compile('(\A\S+)([| \t:_])?\[?(:?\d+-?\d+)?\]?([| \t:_])?(.*)'),  # regex for gene symbol
+             seq_range = re.compile(':?(\d+)-(\d+)'),  # regex for sequence range
+             strand = re.compile('(\([-+0N]\))'),  # regex for strand
+             score = re.compile('\d\d*')
+             )
+    if custom_regex is not None:
+        p = {'custom':custom_regex}
+        id_type = 'custom'
 
     # Begin search:
     if verbose > 1:
         print('ID Loaded, performing regex search for identifiers...', indent=indent)
         print('ID type: ', id_type, indent=indent)
     if id_type == 'brute':
-        for tmp_type in ['accession', 'gi', 'scaffold', 'id', 'chr', 'assembly', 'symbol']:
+        for tmp_type in ['accession', 'gi', 'scaffold', 'id', 'chr', 'assembly', 'assembly_broad', 'symbol']:
             if bool(p[tmp_type].findall(id_rec)):
                 if verbose > 1:
                     print('Brute Force was set, tested strings for all pre-registered IDs.', indent=indent)
                     print('ID was selected as type {0}!'.format(tmp_type), indent=indent+1)
                 return id_search(id_rec=id_rec, id_type=tmp_type, verbose=verbose, indent=indent)
-        raise Exception('Couldn\'t identify the id!')
+        raise Exception('Couldn\'t identify the id type of line: {}!'.format(id_rec))
     else:
         try:
             item_parts = p[id_type].findall(id_rec)[0]
-            print(item_parts)
             if verbose > 1:
                 print('Successfully found {0}, compiling list!'.format(id_type), indent=indent)
                 print('Item:\t', '\t'.join(item_parts), indent=indent+1)
+        except IndexError:
+            raise Exception('ID Error', 'Could not identify patterns in {0} with id_type={1}, '
+                                        'is the id_search sequence correct?'.format(id_rec, id_type))
+        try:
+
             item_parts = list(item_parts)
             item_parts[0] = item_parts[0] if not isinstance(item_parts[0], str) else ''.join(item_parts[0])
 
@@ -1696,7 +1709,7 @@ def id_search(id_rec, id_type='brute', verbose=True, indent=0):
             return p, item_parts[0], seq_range, id_type
 
         except IndexError:
-            raise Exception('ID Error', 'Could not identify patterns in {0} with id_type={1}, '
+            raise Exception('NOT ID Error', 'Could not identify patterns in {0} with id_type={1}, '
                                         'is the id_search sequence correct?'.format(id_rec, id_type))
 
 
@@ -1768,7 +1781,7 @@ class FetchSeq(object):  # The meat of the script
             print('Full header for Entry:', indent=indent)
             print(self.id_rec, indent=indent)
 
-        p, id_item, seq_range, id_type = id_search(self.id_rec, id_type=id_type, verbose=verbose)
+        regex, id_item, seq_range, id_type = id_search(self.id_rec, id_type=id_type, verbose=verbose)
 
         id_item = id_item if isinstance(id_item, str) else ''.join(id_item)
 
@@ -1801,282 +1814,23 @@ class FetchSeq(object):  # The meat of the script
 
         if source.lower() == "entrez":
             seq, itemnotfound = self.entrez(id_item, seq_range, indent, add_length, verbose)
-        elif source.lower() == "sql":
-            if verbose > 1:
-                print('Searching for sequences in local SQL db...', indent=indent)
-            if verbose > 2:
-                print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
-            if version.lower() == 'auto':
-                sub_db_list = []
-                sub_db_name = ''.join([i[0:3] for i in species.title().split(' ')])
-                for sub_db in server.keys():
-                    if sub_db_name in sub_db:
-                        sub_db_list.append(sub_db)
-                if len(sub_db_list) < 1:
-                    raise NameError('sub_db does not exist!')
-                elif len(sub_db_list) == 1:
-                    sub_db_name = sub_db_list[0]
-                else:
-                    if verbose:
-                        print('Multiple database versions found!', indent=indent)
-                        print(sub_db_list, indent=indent)
-                        print('Selecting highest DB', indent=indent)
-                    sub_db_name = sorted(sub_db_list, reverse=True)[0]
-                if verbose:
-                    print('Sub-DB chosen was ', sub_db_name, indent=indent)
-            else:
-                sub_db_name = ''.join([i[0:3] for i in species.title().split(' ')]) + version
-            id_list_search = [''.join(i[0:3]) for i in id_list_ids]
-            try:
-                seqdict = biosql_get_record_mp(sub_db_name=sub_db_name, passwd=passwd, id_list=id_list_search,
-                                               id_type=id_type, driver=driver, user=user,
-                                               host=host, db=db, num_proc=n_threads, server=server, verbose=True)
-            except Exception as err:
-                print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
-                raise Exception('Exception!', err)
-            itemsnotfound = [''.join(x) for x in id_list_ids if ''.join(x) not in seqdict.keys()]
-            if itemsnotfound is not None:
-                if verbose > 1:
-                    print('Some items were not found. List of items will be saved to the file '
-                          'items_not_found.output', indent=indent)
-                    for item in itemsnotfound:
-                        print(item, indent=indent)
-                        # with open(str(out_file.cwd()) + 'items_not_found.output', 'w') as missingitems:
-                        #     missingitems.writelines(itemsnotfound)
-            else:
-                itemsnotfound = None
-            keys = [k for k in seqdict.keys()]
-            if verbose > 1:
-                print("Sequence Dictionary keys:", indent=indent)
-                print(keys, indent=indent)
-            if bool(seq_range):
-                seqrange_ids = [ids for ids in seq_range.keys()]
-                if verbose > 1:
-                    print('Sequence Range IDs:', indent=indent)
-                    print(seqrange_ids, indent=indent)
-                for k in keys:
-                    seqdict[k].features.append(SeqFeature.SeqFeature(type='duplicate'))
-                    if seqdict[k].id in seqrange_ids:
-                        if verbose > 1:
-                            print('For sequence {}, found a sequence range!'.format(str(seqdict[k].id)), indent=indent)
-                            print('Full length of sequence: {}'.format(len(seqdict[k])), indent=indent)
-                        if id_type == 'gi':
-                            seq_description_full = p[0].findall(seqdict[k].description)[0]
-                        elif id_type == 'accession':
-                            seq_description_full = p[1].findall(seqdict[k].description)[0]
-                        elif id_type == 'scaffold':
-                            seq_description_full = p[2].findall(seqdict[k].description)[0]
-                        elif id_type == 'id':
-                            seq_description_full = p[3].findall(seqdict[k].description)[0]
-                        else:
-                            seq_description_full = p[5].findall(seqdict[k].description)[0]
-                    else:
-                        if verbose > 1:
-                            print('No sequence range found, continuing...', indent=indent)
-                        continue
-                    seq_range[k] = format_range(seqrange=seq_range[k], addlength=add_length, indent=indent+1, verbose=verbose)
-                    id_range = ':' + '-'.join([str(i) for i in seq_range[k]])
-                    if verbose > 1:
-                        print('Sequence range: ', seq_range, indent=indent)
-                    if int(seq_range[k][0]) > int(seq_range[k][1]):
-                        if verbose > 1:
-                            print('Starting seq_range is larger than ending seq_range - sequence is '
-                                  'in the (-) direction! Reversing...', indent=indent)
-                        seqdict[k].seq = seqdict[k][
-                                         int(seq_range[k][1]):int(seq_range[k][0])].seq.reverse_complement()
-                        seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][1]),
-                                                                                     int(seq_range[k][0]),
-                                                                                     strand=-1)
-                    else:
-                        try:
-                            strand = seq_range[k][2]
-                            if strand == '(-)':
-                                if verbose > 1:
-                                    print('Sequence was labeled as being in the (-) direction! Reversing...',
-                                          indent=indent)
-                                seqdict[k].seq = seqdict[k][
-                                                 int(seq_range[k][1]):int(seq_range[k][0])].seq.reverse_complement()
-                            else:
-                                seqdict[k] = seqdict[k][int(seq_range[k][0]):int(seq_range[k][1])]
-                        except KeyError:
-                            hasstrand = False
-                            seqdict[k] = seqdict[k][int(seq_range[k][0]):int(seq_range[k][1])]
-                            seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][0]),
-                                                                                         int(seq_range[k][1]),
-                                                                                         strand=1)
-                        else:
-                            hasstrand = True
-                    if verbose > 1:
-                        print('Seq_description_full: ', seq_description_full, indent=indent)
-                        print('id_range: ', id_range[1:], indent=indent)
-                    if hasstrand:
-                        seqdict[k].description= ''.join(seq_description_full[0:3]) + id_range + strand + \
-                                                     str(seq_description_full[3])
-                        if strand == '(-)':
-                            if int(seq_range[k][0]) > int(seq_range[k][0]):
-                                seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][1]),
-                                                                                             int(seq_range[k][0]),
-                                                                                             strand=-1)
-                            else:
-                                seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][0]),
-                                                                                             int(seq_range[k][1]),
-                                                                                             strand=-1)
-                        else:
-                            seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][0]),
-                                                                                         int(seq_range[k][1]),
-                                                                                         strand=1)
-                    else:
-                        if int(seq_range[k][0]) > int(seq_range[k][1]):
-                            seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + '(-)' + \
-                                                     str(seq_description_full[3])
-                        else:
-                            seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + '(+)' + \
-                                                     str(seq_description_full[3])
-                    if verbose > 1:
-                        print('Sequence Description: \n\t', seqdict[k].description, indent=indent)
-                    seqdict[k].id += id_range
-                    try:
-                        seqdict[k].features[0].qualifiers['score'] = id_attr_dict[k][1]
-                        seqdict[k].name = id_attr_dict[k][0]
-                    except KeyError:
-                        seqdict[k].features[0].qualifiers['score'] = 0
-                        seqdict[k].name = id_attr_dict[k][0]
-                    if verbose > 1:
-                        print('Sequence ID: \n\t', seqdict[k].id, indent=indent)
-                        if id_range:
-                            print('Length of subsequence with range {0}: {1}'.format(id_range, len(seqdict[k])),
-                                  indent=indent)
-
-            if verbose > 1:
-                print('Sequence Record post-processing, to be saved:', indent=indent)
-                print(seqdict, indent=indent)
-            if verbose > 1:
-                print('Finished getting sequence!', indent=indent)
-            return seqdict, itemsnotfound
+        elif source.lower() == "postgresql":
+            seq, itemnotfound = self.postgresql(id_item=id_item, seq_range=seq_range, species=species, id_type=id_type,
+                                                driver=driver, user=user, host=host, passwd=passwd, db=db,
+                                                n_threads=n_threads, version=version, server=server,
+                                                indent=indent, verbose=verbose)
         elif source == "fasta":  # Note: anecdotally, this doesn't run terribly fast - try to avoid.
-            # TODO: have this work like SQL does.
-
-            seqdict = SeqIO.index(db, source, key_function=lambda identifier: \
-                                                                   p[0].search(p[2].search(identifier).group()).group())
-            itemsnotfound = [''.join(x) for x in id_list_ids if ''.join(x) not in seqdict.keys()]
-            if itemsnotfound is not None:
-                if verbose > 1:
-                    print('Some items were not found. List of items will be saved to the file '
-                          'items_not_found.output', indent=indent)
-                    for item in itemsnotfound:
-                        print(item, indent=indent)
-                        # with open(str(out_file.cwd()) + 'items_not_found.output', 'w') as missingitems:
-                        #     missingitems.writelines(itemsnotfound)
-            else:
-                itemsnotfound = None
-            keys = [k for k in seqdict.keys()]
-            if verbose > 1:
-                print("Sequence Dictionary keys:", indent=indent)
-                print(keys, indent=indent)
-            if bool(seq_range):
-                seqrange_ids = [ids for ids in seq_range.keys()]
-                if verbose > 1:
-                    print('Sequence Range IDs:', indent=indent)
-                    print(seqrange_ids, indent=indent)
-                for k in keys:
-                    seqdict[k].features.append(SeqFeature.SeqFeature(type='duplicate'))
-                    if seqdict[k].id in seqrange_ids:
-                        if verbose > 1:
-                            print('For sequence {}, found a sequence range!'.format(str(seqdict[k].id)), indent=indent)
-                            print('Full length of sequence: {}'.format(len(seqdict[k])), indent=indent)
-                        if id_type == 'gi':
-                            seq_description_full = p[0].findall(seqdict[k].description)[0]
-                        elif id_type == 'accession':
-                            seq_description_full = p[1].findall(seqdict[k].description)[0]
-                        elif id_type == 'scaffold':
-                            seq_description_full = p[2].findall(seqdict[k].description)[0]
-                        elif id_type == 'id':
-                            seq_description_full = p[3].findall(seqdict[k].description)[0]
-                        else:
-                            seq_description_full = p[5].findall(seqdict[k].description)[0]
-                    else:
-                        if verbose > 1:
-                            print('No sequence range found, continuing...', indent=indent)
-                        continue
-                    seq_range[k] = format_range(seqrange=seq_range[k], addlength=add_length, indent=indent+1, verbose=verbose)
-                    id_range = ':' + '-'.join([str(i) for i in seq_range[k]])
-                    if verbose > 1:
-                        print('Sequence range: ', seq_range, indent=indent)
-                    if int(seq_range[k][0]) > int(seq_range[k][1]):
-                        if verbose > 1:
-                            print('Starting seq_range is larger than ending seq_range - sequence is '
-                                  'in the (-) direction! Reversing...', indent=indent)
-                        seqdict[k].seq = seqdict[k][
-                                         int(seq_range[k][1]):int(seq_range[k][0])].seq.reverse_complement()
-                        seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][1]),
-                                                                                     int(seq_range[k][0]),
-                                                                                     strand=-1)
-                    else:
-                        try:
-                            strand = seq_range[k][2]
-                            if strand == '(-)':
-                                if verbose > 1:
-                                    print('Sequence was labeled as being in the (-) direction! Reversing...',
-                                          indent=indent)
-                                seqdict[k].seq = seqdict[k][
-                                                 int(seq_range[k][1]):int(seq_range[k][0])].seq.reverse_complement()
-                            else:
-                                seqdict[k] = seqdict[k][int(seq_range[k][0]):int(seq_range[k][1])]
-                        except KeyError:
-                            hasstrand = False
-                            seqdict[k] = seqdict[k][int(seq_range[k][0]):int(seq_range[k][1])]
-                            seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][0]),
-                                                                                         int(seq_range[k][1]),
-                                                                                         strand=1)
-                        else:
-                            hasstrand = True
-                    if verbose > 1:
-                        print('Seq_description_full: ', seq_description_full, indent=indent)
-                        print('id_range: ', id_range[1:], indent=indent)
-                    if hasstrand:
-                        seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + strand + \
-                                                 str(seq_description_full[3])
-                        if strand == '(-)':
-                            if int(seq_range[k][0]) > int(seq_range[k][0]):
-                                seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][1]),
-                                                                                             int(seq_range[k][0]),
-                                                                                             strand=-1)
-                            else:
-                                seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][0]),
-                                                                                             int(seq_range[k][1]),
-                                                                                             strand=-1)
-                        else:
-                            seqdict[k].features[0].location = SeqFeature.FeatureLocation(int(seq_range[k][0]),
-                                                                                         int(seq_range[k][1]),
-                                                                                         strand=1)
-                    else:
-                        if int(seq_range[k][0]) > int(seq_range[k][1]):
-                            seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + '(-)' + \
-                                                     str(seq_description_full[3])
-                        else:
-                            seqdict[k].description = ''.join(seq_description_full[0:3]) + id_range + '(+)' + \
-                                                     str(seq_description_full[3])
-                    if verbose > 1:
-                        print('Sequence Description: \n\t', seqdict[k].description, indent=indent)
-                    seqdict[k].id += id_range
-                    if verbose > 1:
-                        print('Sequence ID: \n\t', seqdict[k].id, indent=indent)
-                        if id_range:
-                            print('Length of subsequence with range {0}: {1}'.format(id_range, len(seqdict[k])),
-                                  indent=indent)
-            if verbose > 1:
-                print('Sequence Record post-processing, to be saved:', indent=indent)
-                print(seqdict, indent=indent)
-            if verbose > 1:
-                print('Finished getting sequence!', indent=indent)
-            return seqdict, itemsnotfound
-            # SeqIO.write([seqdict[key] for key in seqdict.keys()], str(out_file), output_type)
+            seq, itemnotfound = self.fasta(id_item=id_item, seq_range=seq_range, regex=regex, db=db, source=source,
+                                           indent=indent, verbose=verbose)
         elif source == "2bit":
             seq, itemnotfound = self.twobit(id_full=id_full, id_item=id_item, seq_range=seq_range, db=db,
                                             indent=indent, add_length=add_length, verbose=verbose)
         else:
             raise Exception('Not a valid database source: {}'.format(source))
-
+        if itemnotfound is not None:
+            if verbose > 1:
+                print('Some items were not found:', indent=indent)
+                print(itemnotfound, indent=indent)
         try:
             strand = seq_range[2]
             if strand == '(-)':
@@ -2125,6 +1879,53 @@ class FetchSeq(object):  # The meat of the script
 
     def entrez(self, id_item, seq_range, indent, add_length, verbose):
         raise Exception('Search type "entrez" is not yet implemented, sorry!!!')
+
+    def fasta(self, id_item, seq_range, regex, db, source, indent, verbose):
+        seqdict = SeqIO.index(db, source,
+                              key_function=lambda identifier:regex[0].search(regex[2].search(identifier).group()).group())
+        itemnotfound = id_item if id_item not in seqdict.keys() else None
+        seq = seqdict[id_item]
+        seq = seq[slice(seq_range[0], seq_range[1])]
+        return seq, itemnotfound
+
+    def postgresql(self, id_item, seq_range, species, id_type, driver, user, host, passwd, db, n_threads, version, server, indent, verbose):
+        if verbose > 1:
+            print('Searching for sequences in local SQL db...', indent=indent)
+        if verbose > 2:
+            print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
+        if version.lower() == 'auto':
+            sub_db_list = []
+            sub_db_name = ''.join([i[0:3] for i in species.title().split(' ')])
+            for sub_db in server.keys():
+                if sub_db_name in sub_db:
+                    sub_db_list.append(sub_db)
+            if len(sub_db_list) < 1:
+                raise NameError('sub_db does not exist!')
+            elif len(sub_db_list) == 1:
+                sub_db_name = sub_db_list[0]
+            else:
+                if verbose:
+                    print('Multiple database versions found!', indent=indent)
+                    print(sub_db_list, indent=indent)
+                    print('Selecting highest DB', indent=indent)
+                sub_db_name = sorted(sub_db_list, reverse=True)[0]
+            if verbose:
+                print('Sub-DB chosen was ', sub_db_name, indent=indent)
+        else:
+            sub_db_name = ''.join([i[0:3] for i in species.title().split(' ')]) + version
+        id_list_search = id_item
+        try:
+            seq_dict, itemnotfound = biosql_get_record_mp(sub_db_name=sub_db_name, passwd=passwd, id_list=id_list_search,
+                                   id_type=id_type, driver=driver, user=user,
+                                   host=host, db=db, num_proc=n_threads, server=server, verbose=True)
+        except Exception as err:
+            print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
+            raise err
+        seq_ids = list(seq_dict.keys())
+        assert len(seq_ids) == 1, 'Multiple sequences were returned for a single query!'
+        seq = seq_dict[seq_ids[0]]
+        seq = seq[slice(seq_range[0], seq_range[1])]
+        return seq, itemnotfound
 
     def twobit(self, id_full, id_item, seq_range, db, indent, add_length, verbose):
         seq = None
@@ -2259,7 +2060,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
 
     def __init__(self, proc_id, rb_queue, rb_results_queue, fw_blast_db, infile_type, output_type, BLASTDB,
                  query_species, blast_type_1, blast_type_2, local_blast_1, local_blast_2, rv_blast_db, expect,
-                 perc_score, perc_span, outfolder, indent, reciprocal_method, hit_name_only,
+                 perc_score, perc_span, outfolder, indent, reciprocal_method, hit_name_only, translate_hit_name,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
                  write_intermediates):
@@ -2292,6 +2093,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
         self.fw_id_db = fw_id_db
         self.batch_size = fetch_batch_size
         self.passwd = passwd
+        self.translate_hit_name = translate_hit_name
         self.fw_id_db_version = fw_id_db_version
         self.verbose = verbose
         self.n_threads = n_threads
@@ -2327,7 +2129,7 @@ class RecBlastMP_Thread(multiprocessing.Process):
                                          perc_length=self.perc_length, megablast=self.megablast, email=self.email,
                                          id_type=self.id_type,
                                          fw_source=self.fw_source, fw_id_db=self.fw_id_db, fetch_batch_size=self.batch_size,
-                                         passwd=self.passwd,
+                                         passwd=self.passwd, translate_hit_name=self.translate_hit_name,
                                          fw_id_db_version=self.fw_id_db_version, verbose=self.verbose, indent=self.indent,
                                          n_threads=self.n_threads,
                                          host=self.host, reciprocal_method = self.reciprocal_method,
@@ -2356,7 +2158,7 @@ class RecBlast(object):
 
     def __call__(self, fw_blast_db, infile_type, output_type, BLASTDB, reciprocal_method,
                  query_species, blast_type_1, blast_type_2, local_blast_1, local_blast_2, rv_blast_db, expect,
-                 perc_score, indent, hit_name_only, perc_span,
+                 perc_score, indent, hit_name_only, perc_span, translate_hit_name,
                  perc_ident, perc_length, megablast, email, id_type, fw_source, fw_id_db, fetch_batch_size, passwd,
                  host, user, driver, fw_id_db_version, verbose, n_threads, fw_blast_kwargs, rv_blast_kwargs,
                  write_intermediates, proc_id):
@@ -2475,34 +2277,25 @@ class RecBlast(object):
             if verbose:
                 print("Performing forward BLAST for {}... ".format(self.seq_record.id), indent=indent+1)
             try:
+                fw_blast_args = dict(seq_record=self.seq_record, target_species=target_species,
+                                     database=fw_blast_db,
+                                     filetype=infile_type, BLASTDB=BLASTDB,
+                                     blast_type=blast_type_1, local_blast=local_blast_1, expect=expect,
+                                     megablast=megablast, n_threads=n_threads,
+                                     blastoutput_custom=output_paths['forward_blast_output'],
+                                     perc_ident=perc_ident, verbose=verbose, write=write_intermediates)
                 if fw_blast_kwargs:
-                    if verbose:
-                        for key, item in fw_blast_kwargs.items():
-                            print('{0}\t=\t{1}'.format(key, item), indent=indent+2)
-                    try:
-                        fwblastrecord, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
-                                                         database=fw_blast_db,
-                                                         filetype=infile_type, BLASTDB=BLASTDB,
-                                                         blast_type=blast_type_1, local_blast=local_blast_1, expect=expect,
-                                                         megablast=megablast, n_threads=n_threads,
-                                                         blastoutput_custom=output_paths['forward_blast_output'],
-                                                         perc_ident=perc_ident, verbose=verbose, write=write_intermediates,
-                                                         **fw_blast_kwargs)
-                    except ValueError:
-                        rc_container['recblast_unanno'] = [SeqRecord('')]
-                        return rc_container_full
-                else:
-                    try:
-                        fwblastrecord, blast_err = blast(seq_record=self.seq_record, target_species=target_species,
-                                                         database=fw_blast_db,
-                                                         filetype=infile_type, BLASTDB=BLASTDB,
-                                                         blast_type=blast_type_1, local_blast=local_blast_1, expect=expect,
-                                                         megablast=megablast, n_threads=n_threads,
-                                                         blastoutput_custom=output_paths['forward_blast_output'],
-                                                         perc_ident=perc_ident, verbose=verbose, write=write_intermediates)
-                    except ValueError:
-                        rc_container['recblast_unanno'] = [SeqRecord('')]
-                        return rc_container_full
+                    for key, item in fw_blast_kwargs.items():
+                        fw_blast_args[key] = item
+                if verbose:
+                    print("Blast arguments: ", indent=indent + 1)
+                    for key, item in fw_blast_args.items():
+                        print('{0}\t=\t{1}'.format(key, item), indent=indent + 2)
+                try:
+                    fwblastrecord, blast_err = blast(**fw_blast_args)
+                except ValueError:
+                    rc_container['recblast_unanno'] = [SeqRecord('')]
+                    return rc_container_full
             except Exception as err:
                 print('WARNING! UNCATCHED EXCEPTION OCCURED!')
                 print(err)
@@ -2536,17 +2329,25 @@ class RecBlast(object):
         if not f_id_out_list:
             print('Forward Blast yielded no hits, continuing to next sequence!')
             return rc_container_full
-        if blast_type_1.lower() in ['blat', 'tblat'] and fw_id_db == 'auto':
+        if blast_type_1.lower() in ['blat', 'tblat']:
             if verbose > 1:
                 print('Since blat was selecting, setting fw_id_db equal to fw_blast_db', indent=indent)
-            blat_2bit = get_searchdb(search_type=blast_type_1, species=target_species, db_loc=BLASTDB,
-                                     verbose=verbose, indent=indent+1)
+            if isinstance(fw_id_db, dict):
+                blat_2bit = fw_id_db[target_species]
+            elif fw_id_db == 'auto':
+                blat_2bit = get_searchdb(search_type=blast_type_1, species=target_species, db_loc=BLASTDB,
+                                         verbose=verbose, indent=indent+1)
+            elif isinstance(fw_id_db, str):
+                blat_2bit = fw_id_db
+            else:
+                raise Exception('Invalid 2bit file designation!')
             fw_id_db = Path(BLASTDB, blat_2bit+'.2bit').absolute()
             fw_id_db = str(fw_id_db) if fw_id_db.is_file() else None
             if fw_id_db is None:
                 raise Exception('Invalid 2bit file!')
             if verbose > 1:
                 print(fw_id_db)
+
         try:
             if 'sql' in fw_source.lower():
                 server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd,
@@ -2753,7 +2554,8 @@ class RecBlast(object):
             reverse_blast_annotations = []
             for anno in reverse_hits:
                 try:
-                    new_anno = translate_annotation(anno[0])
+                    if translate_hit_name:
+                        new_anno = translate_annotation(anno[0])
                 except Exception:
                     new_anno = anno[0]
                 finally:
@@ -2800,7 +2602,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                email='', run_name='default', output_loc='./RecBlast_output',
                id_type='brute', fw_source='sql', fw_id_db='bioseqdb', fetch_batch_size=50,
                passwd='', hit_name_only=False, min_mem=False,
-               fw_id_db_version='auto', BLASTDB='/usr/db/blastdb', indent=0,
+               fw_id_db_version='auto', BLASTDB='/usr/db/blastdb', indent=0, translate_hit_name=True,
                verbose='v', max_n_processes='auto', n_threads=2, write_intermediates=False, write_final=True,
                reciprocal_method = 'best hit', fw_blast_kwargs=None, rv_blast_kwargs=None):
     """
@@ -2845,6 +2647,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
     :param fw_id_db:
     :param fetch_batch_size:
     :param passwd:
+    :param translate_hit_name:
     :param hit_name_only:
     :param min_mem:
     :param fw_id_db_version:
@@ -3073,6 +2876,7 @@ def recblastMP(seqfile, target_species, fw_blast_db='auto', rv_blast_db='auto-tr
                                              local_blast_1=local_blast_1, local_blast_2=local_blast_2,
                                              rv_blast_db=rv_blast_db, expect=expect, perc_score=perc_score,
                                              perc_ident=perc_ident, perc_span=perc_span,
+                                             translate_hit_name=translate_hit_name,
                                              perc_length=perc_length, megablast=megablast, email=email, id_type=id_type,
                                              fw_source=fw_source, fw_id_db=fw_id_db, fetch_batch_size=fetch_batch_size,
                                              passwd=passwd, reciprocal_method=reciprocal_method,
