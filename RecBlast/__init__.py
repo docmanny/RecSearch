@@ -90,3 +90,7 @@ def merge_ranges(ranges):
             current_stop = max(current_stop, stop)
     yield current_start, current_stop
 
+
+def flatten(list):
+    return [item for sublist in list for item in sublist]
+
