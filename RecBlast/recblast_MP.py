@@ -352,12 +352,15 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
                 all(s == 0 for s in flatten(x)) or None
             return y
 
-        # Two more functions for to make great progress
+        # Three more functions for to make great progress
         def sort_scores(hit):
             return sum([hsp.score for hsp in hit.hsps])
 
         def hit_target_span(hit):
             return list(merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit]))
+
+        def hit_query_coverage(hit):
+            return list(merge_ranges(flatten([list(merge_ranges(hsp.query_range_all)) for hsp in hit])))
 
         # Get top stats:
         top_score = max([sum([hsp.score for hsp in hit.hsps]) for hit in record])
@@ -444,27 +447,30 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
         # Add items to id_list
         for hit in record6:
             seq_name = hit.id
+            hts = hit_target_span(hit)
+            seq_cov = hit_query_coverage(hit)
             if seq_method == 'whole':
-                hts = hit_target_span(hit)
-                seq_range = '[:{0}-{1}]'.format(hts[0][0], hts[-1][-1])
+                seq_range = [hts[0][0], hts[-1][-1]]
+                seq_coverage = [seq_cov[0][0], seq_cov[-1][-1]]
             elif seq_method == 'strict':
-                seq_range = '[:' + ''.join(['{0}-{1};'.format(i[0], i[-1])
-                                            for i in hit_target_span(hit)]).rstrip(';') + ']'
+                seq_range = [(i[0], i[-1]) for i in hts]
+                seq_coverage = [(s[0], s[-1]) for s in seq_cov]
             else:
                 seq_range = ''
+                seq_coverage = ''
             strands = flatten([bla.hit_strand_all for bla in hit.hsps])
             if all(s > 0 for s in strands):
-                seq_range += '(+)'
+                strand = '(+)'
             elif all(s < 0 for s in strands):
-                seq_range += '(-)'
+                strand = '(-)'
             elif all(s == 0 for s in strands):
-                seq_range += '(0)'
+                strand = '(0)'
             else:
-                seq_range += '(N)'
+                strand = '(N)'
             seq_score = sum([hsp.score for hsp in hit.hsps])
             if verbose > 2:
-                print("Adding hit {} to id list".format(seq_name+seq_range), indent=indent)
-            id_list.append((seq_name, seq_range, seq_score))
+                print("Adding hit {} to id list".format(seq_name + ':' + '-'.join(seq_range[0:2])), indent=indent)
+            id_list.append((seq_name, seq_range, strand, seq_score, seq_coverage))
             if method == 'best hit':
                 print('Best Hit Reciprocal BLAST was selected, ending Reverse BLASTS after first annotation!',
                       indent=indent)
@@ -2321,7 +2327,9 @@ class RecBlast(object):
             return rc_container_full
         if verbose:
             print('Done!', indent=indent)
-        f_id_out_list = ['{0}\t{1}\t{2}\n'.format(id_i[0], id_i[1], id_i[2]) for id_i in f_id_ranked]
+        # f_id_ranked: [(seq_name, seq_range, strand, seq_score, seq_coverage) per hit]
+        f_id_out_list = ['{0}:{1}-{2}{3}\t{4}\n'.format(id_i[0], id_i[1][0],
+                                                        id_i[1][1], id_i[2], id_i[3]) for id_i in f_id_ranked]
         fw_ids = rc_container['forward_ids']
         fw_ids['ids'] = f_id_ranked
         fw_ids['pretty_ids'] = f_id_out_list
