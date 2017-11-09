@@ -4,7 +4,9 @@ import logging
 import re
 import sqlite3
 import subprocess
-from collections import OrderedDict
+import warnings
+
+
 from contextlib import redirect_stdout
 from copy import deepcopy
 from datetime import datetime as dt
@@ -28,7 +30,7 @@ from Bio.SeqRecord import SeqRecord
 from BioSQL import BioSeqDatabase
 from BioSQL.BioSeq import DBSeqRecord
 
-from RecBlast import print, ProgressBar, merge_ranges, __version__
+from RecBlast import print, ProgressBar, merge_ranges, flatten, __version__
 from RecBlast.Auxilliary import translate_annotation
 
 
@@ -343,9 +345,6 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
             hit = hit.filter(lambda hsp: hsp.hit_span >= int(perc_span * top_span))
             return hit
 
-        def flatten(list):
-            return [item for sublist in list for item in sublist]
-
         def hit_same_strand(hit):
             x = [bla.hit_strand_all for bla in hit.hsps]
             y = all(s > 0 for s in flatten(x)) or all(s < 0 for s in flatten(x)) or \
@@ -443,7 +442,8 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
         if verbose > 1:
             print('Sorting all hits by descending scores!', indent=indent)
         record6.sort(key=sort_scores, reverse=True, in_place=True)
-
+        if verbose > 1:
+            print('Done!', indent=indent)
         # Add items to id_list
         for hit in record6:
             seq_name = hit.id
@@ -469,13 +469,15 @@ def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1
                 strand = '(N)'
             seq_score = sum([hsp.score for hsp in hit.hsps])
             if verbose > 2:
-                print("Adding hit {} to id list".format(seq_name + ':' + '-'.join(seq_range[0:2])), indent=indent)
+                print("Adding hit {} to id list".format(seq_name + ':' + '-'.join([str(i) for i in seq_range[0:2]])),
+                      indent=indent)
             id_list.append((seq_name, seq_range, strand, seq_score, seq_coverage))
             if method == 'best hit':
                 print('Best Hit Reciprocal BLAST was selected, ending Reverse BLASTS after first annotation!',
                       indent=indent)
                 break
     else:
+        warnings.warn('No guarantees that this is going to work as of commit 81d3d36')
         truthple = []
         subject_range = []
         query_start_end = []
@@ -589,7 +591,7 @@ def biosql_DBSeqRecord_to_SeqRecord(DBSeqRecord_, off=False):
                          letter_annotations=DBSeqRecord_.letter_annotations)
 
 
-def format_range(seqrange, addlength, indent, verbose):
+def format_range(seqrange, strand, addlength, indent, verbose):
     assert isinstance(addlength, tuple) and len(addlength) == 2, "addlength must be a tuple of length 2!"
     try:
         lextend = -int(addlength[0])
@@ -605,30 +607,18 @@ def format_range(seqrange, addlength, indent, verbose):
         print(err)
         lrange = 0
         rrange = -1
-    try:
-        strand = seqrange[2]
-    except IndexError:
-        strand = '(0)'
-    try:
-        score = seqrange[3]
-    except IndexError:
-        score = 0
     if verbose > 1:
         print('Original range: {0}-{1}{2}'.format(lrange, rrange, strand), indent=indent)
-        print('Adding {0} steps to the beginning and {1} steps to the end of the sequence!'.format(lextend,
-                                                                                                   rextend),
+        print('Adding {0} steps to the beginning and {1} steps to the end of the sequence!'.format(lextend, rextend),
               indent=indent)
     if lrange > rrange:
-        if strand == '(-)':
-            strand = '(+)'
-        else:
-            strand = '(-)'
+        strand = '(+)' if strand =='(-)' else '(-)'
         lrange = seqrange[1]
         rrange = seqrange[0]
     newrange = tuple(map(lambda x, y: int(x) + y, (lrange, rrange), (lextend, rextend)))
     if verbose > 2:
         print('New range: {0}-{1}{2}'.format(lrange, rrange, strand), indent=indent)
-    return (newrange[0], newrange[1], strand, score)
+    return (newrange, strand)
 
 
 class RecBlastContainer(dict):
@@ -879,21 +869,23 @@ class RecBlastContainer(dict):
                 odb = kwargs.pop('outdb', None)
                 nwrite = self._write_sqlite(outdb=odb, sqlfile=file_loc, table_name=tbn, **kwargs)
             elif 'bed' in filetype.lower():
+                col = kwargs.pop('col', 12)
+                custom = kwargs.pop('custom', None)
                 filename = kwargs.pop('filename', 'RecBlastOutput.bed').replace(' ', '_')
                 filename += '' if filename.endswith('.bed') else '.bed'
                 if filetype.lower() == 'bed-min':
                     nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=4, **kwargs)
+                elif filetype.lower() == 'bed-complete':
+                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom='complete', **kwargs)
                 else:
-                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, **kwargs)
+                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom=custom, **kwargs)
             elif filetype.lower() in 'gff3':
                 nwrite = self._write_gff3(file_loc=file_loc, **kwargs)
             else:
                 nwrite = self._write_files(file_loc=file_loc, filetype=filetype, **kwargs)
         return nwrite
 
-    def _write_bed(self, file_loc, filename, **kwargs):
-        col = kwargs.pop('col', 12)
-        custom = kwargs.pop('custom', None)
+    def _write_bed(self, file_loc, filename, custom, col, **kwargs):
         nwrite = 0
         for species in self.keys():
             bed = []
@@ -960,9 +952,14 @@ class RecBlastContainer(dict):
                         blockStarts = '.'
                     extra = []
                     if custom:
-                        extra.append(';'.join(('{0}={1}'.format(str(item),
-                                                                str(feat.qualifiers[item])) for item \
-                                               in custom if item in feat.qualifiers.keys())))
+                        new_cols = []
+                        if custom == 'complete':
+                            for val in feat.qualifiers.keys():
+                                new_cols.append('{0}={1}'.format(str(val), str(feat.qualifiers[val])))
+                        for val in custom:
+                            if val in feat.qualifiers.keys():
+                                new_cols.append('{0}={1}'.format(str(val), str(feat.qualifiers[val])))
+                        extra.append(';'.join(new_cols))
                     items = [hit.name,
                              loc[0],
                              loc[1],
@@ -975,8 +972,11 @@ class RecBlastContainer(dict):
                              blockCount,
                              blockSizes,
                              blockStarts]
-                    items += extra
-                    items = [str(i) for i in items][0:col]
+                    if extra != []:
+                        items += extra
+                        items = [str(i) for i in items]
+                    else:
+                        items = [str(i) for i in items][0:col]
                     line = '\t'.join(items) + '\n'
                     bed.append(line)
                 nwrite += 1
@@ -1138,7 +1138,8 @@ class RecBlastContainer(dict):
                 self_sub = self[species]
                 for query in other_sub.keys():
                     if query in self_sub.keys():
-                        pass  # Note: will never overwrite pre-existing query results for a species.
+                        warnings.warn('The record corresponding to Species {0} with '
+                                      'Query {1} is duplicated and will be dropped'.format(species, query))
                     else:
                         self[species].update({query: other_sub[query]})
             else:
@@ -1155,7 +1156,8 @@ class RecBlastContainer(dict):
                     self_sub = self[species]
                     for query in other_sub.keys():
                         if query in self_sub.keys():
-                            pass  # Note: will never overwrite pre-existing query results for a species.
+                            warnings.warn('The record corresponding to Species {0} with '
+                                          'Query {1} is duplicated and will be dropped'.format(species, query))
                         else:
                             self[species].update({query: other_sub[query]})
                 else:
@@ -1613,7 +1615,7 @@ def biosql_get_record_mp(id_list, sub_db_name, passwd='', id_type='accession', d
     return seqdict, itemsnotfound
 
 
-def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex = None):
+def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex = None, regex_only=False):
     """
 
     EX:
@@ -1662,7 +1664,10 @@ def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex = None)
                 if verbose > 1:
                     print('Brute Force was set, tested strings for all pre-registered IDs.', indent=indent)
                     print('ID was selected as type {0}!'.format(tmp_type), indent=indent+1)
-                return id_search(id_rec=id_rec, id_type=tmp_type, verbose=verbose, indent=indent)
+                if regex_only:
+                    return p[tmp_type]
+                else:
+                    return id_search(id_rec=id_rec, id_type=tmp_type, verbose=verbose, indent=indent)
         raise Exception('Couldn\'t identify the id type of line: {}!'.format(id_rec))
     else:
         try:
@@ -1688,9 +1693,6 @@ def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex = None)
                     raise Exception('A positive match for a sequence range was found '
                                     '({0}), yet no hits were identified! Confirm that '
                                     'the regex is correct and try again!'.format(item_parts[2]))
-                else:
-                    if verbose > 1:
-                        print('Found sequence delimiters in IDs!', indent=indent)
             else:
                 sr_tuple = (0,-1)
             if item_parts[4]:
@@ -1768,7 +1770,7 @@ class FetchSeqMP(multiprocessing.Process):
                 print('ERROR!')
                 print(err)
                 id_item, seq = ('', '')
-                miss_items = list()
+                miss_items = []
             self.id_queue.task_done()
             self.seq_out_queue.put(((id_item, seq), miss_items))
         return
@@ -1776,41 +1778,29 @@ class FetchSeqMP(multiprocessing.Process):
 
 class FetchSeq(object):  # The meat of the script
     def __init__(self, id_rec):
-        assert isinstance(id_rec, str), 'id_rec as received by FetchSeq class was not a string object!'
+        assert isinstance(id_rec, tuple) or isinstance(id_rec, list), 'id_rec{0} has type {1}!'.format(id_rec,
+                                                                                                       type(id_rec))
         self.id_rec = id_rec
 
     def __call__(self, delim, species, version, source, passwd, id_type, driver, user, host, db, n_threads, server,
                  verbose, add_length, indent):
-        # out_file = Path(output_name + '.' + output_type)
-
         if verbose > 1:
             print('Full header for Entry:', indent=indent)
             print(self.id_rec, indent=indent)
-
-        regex, id_item, seq_range, id_type = id_search(self.id_rec, id_type=id_type, verbose=verbose)
-
-        id_item = id_item if isinstance(id_item, str) else ''.join(id_item)
-
-        if verbose > 2:
-            print('{0} {1}'.format(''.join(id_item), ' '.join((str(i) for i in seq_range))), indent=indent)
+        id_item, seq_range, strand, score, query_coverage = self.id_rec
         was_reversed = False
         try:
             if verbose > 1:
                 print('Seq range: ', seq_range, indent=indent)
-            assert len(seq_range) == 4, 'Seq_range returned a tuple of length != 4!!!'
+            assert len(seq_range) == 2, 'Seq_range returned a tuple of length != 2!!!'
+            old_strand = strand
             if add_length != (0, 0):
-                seq_range = format_range(seqrange=seq_range, addlength=add_length,
-                                             indent=indent + 1,
-                                             verbose=verbose)
+                seq_range, strand = format_range(seqrange=seq_range, strand=strand, addlength=add_length,
+                                                 indent=indent + 1, verbose=verbose)
             if -1 in seq_range[0:2]:
                 id_full = '{0}'.format(id_item)
-            elif seq_range[0] < seq_range[1]:
-                id_full = '{0}:{1}-{2}'.format(id_item, seq_range[0], seq_range[1])
-            elif seq_range[0] > seq_range[1]:
-                id_full = '{0}:{2}-{1}'.format(id_item, seq_range[0], seq_range[1])
-                was_reversed = True
             else:
-                id_full = '{0}'.format(id_item)
+                id_full = '{0}:{1}-{2}'.format(id_item, seq_range[0], seq_range[1])
         except KeyError:
             raise KeyError('Sequence {0} lacks a seq_range entry!!!'.format(id_item))
         if verbose:
@@ -1820,81 +1810,57 @@ class FetchSeq(object):  # The meat of the script
 
         if source.lower() == "entrez":
             seq, itemnotfound = self.entrez(id_item, seq_range, indent, add_length, verbose)
-        elif source.lower() == "postgresql":
-            seq, itemnotfound = self.postgresql(id_item=id_item, seq_range=seq_range, species=species, id_type=id_type,
-                                                driver=driver, user=user, host=host, passwd=passwd, db=db,
-                                                n_threads=n_threads, version=version, server=server,
-                                                indent=indent, verbose=verbose)
+        elif source.lower() in ["postgresql", "mysql"]:
+            seq, itemnotfound = self.sql(id_item=id_item, seq_range=seq_range, source=source, species=species,
+                                         id_type=id_type, user=user, host=host, passwd=passwd, db=db,
+                                         n_threads=n_threads, version=version, server=server,
+                                         indent=indent, verbose=verbose)
         elif source == "fasta":  # Note: anecdotally, this doesn't run terribly fast - try to avoid.
-            seq, itemnotfound = self.fasta(id_item=id_item, seq_range=seq_range, regex=regex, db=db, source=source,
+            seq, itemnotfound = self.fasta(id_item=id_item, seq_range=seq_range, db=db, source=source,
                                            indent=indent, verbose=verbose)
         elif source == "2bit":
-            seq, itemnotfound = self.twobit(id_full=id_full, id_item=id_item, seq_range=seq_range, db=db,
-                                            indent=indent, add_length=add_length, verbose=verbose)
+            seq, itemnotfound = self.twobit(id_full=id_full, id_item=id_item, db=db,
+                                            indent=indent, verbose=verbose)
         else:
             raise Exception('Not a valid database source: {}'.format(source))
         if itemnotfound is not None:
             if verbose > 1:
                 print('Some items were not found:', indent=indent)
                 print(itemnotfound, indent=indent)
-        try:
-            strand = seq_range[2]
-            if strand == '(-)':
-                if verbose > 1:
-                    print('Sequence was labeled as being in the (-) direction! Reversing...',
-                          indent=indent)
-                seq.seq = seq.seq.reverse_complement()
-            hasstrand = True
-        except KeyError:
-            raise KeyError('Sequence {0} lacks a seq_range entry!!!'.format(id_item))
-        except IndexError:
-            hasstrand = False
-            seq = seq[int(seq_range[0]):int(seq_range[1])]
-            seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]),
-                                                                               int(seq_range[1]),
-                                                                               strand=1)
+        if old_strand != strand:
+            if verbose > 1:
+                print('Sequence was inverted! Reverse complementing now...', indent=indent)
+            seq.seq = seq.seq.reverse_complement()
+            if verbose > 1:
+                print('Done!', indent=indent)
         seq.features.append(SeqFeature.SeqFeature(type='duplicate'))
-        if hasstrand:
-            seq.description += strand
-            if strand == '(-)':
-
-                if int(seq_range[0]) > int(seq_range[0]):
-                    seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[1]),
-                                                                                       int(seq_range[0]),
-                                                                                       strand=-1)
-                else:
-                    seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]),
-                                                                                       int(seq_range[1]),
-                                                                                       strand=-1)
-            else:
-                seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]),
-                                                                                   int(seq_range[1]),
-                                                                                   strand=1)
+        if strand == '(+)':
+            s = 1
+        elif strand == '(-)':
+            s = -1
         else:
-            if was_reversed:
-                seq.description += '(-)'
-            else:
-                seq.description += '(+)'
-        try:
-            seq.features[0].qualifiers['score'] = seq_range[3]
-            seq.name = id_item
-        except KeyError:
-            seq.name = id_item
-            seq.features[0].qualifiers['score'] = 0
+            s = None
+        seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]), int(seq_range[1]), strand=s)
+        seq.features[0].qualifiers['score'] = score
+        seq.features[0].qualifiers['query_coverage'] = query_coverage
+        seq.name = id_item
         return id_item, seq, itemnotfound
 
     def entrez(self, id_item, seq_range, indent, add_length, verbose):
         raise Exception('Search type "entrez" is not yet implemented, sorry!!!')
 
-    def fasta(self, id_item, seq_range, regex, db, source, indent, verbose):
+    def fasta(self, id_item, seq_range, db, source, indent, verbose):
+        regex = id_search(id_item, indent=indent, verbose=verbose, regex_only=True)
         seqdict = SeqIO.index(db, source,
-                              key_function=lambda identifier:regex[0].search(regex[2].search(identifier).group()).group())
+                              key_function=lambda identifier: regex.search(identifier).groups()[0])
         itemnotfound = id_item if id_item not in seqdict.keys() else None
         seq = seqdict[id_item]
         seq = seq[slice(seq_range[0], seq_range[1])]
         return seq, itemnotfound
 
-    def postgresql(self, id_item, seq_range, species, id_type, driver, user, host, passwd, db, n_threads, version, server, indent, verbose):
+    def sql(self, id_item, seq_range, source, species, id_type, user, host, passwd, db,
+                   n_threads, version, server, indent, verbose):
+        driver = "mysql" if source.lower() == 'mysql' else "psycopg2"
         if verbose > 1:
             print('Searching for sequences in local SQL db...', indent=indent)
         if verbose > 2:
@@ -1933,7 +1899,7 @@ class FetchSeq(object):  # The meat of the script
         seq = seq[slice(seq_range[0], seq_range[1])]
         return seq, itemnotfound
 
-    def twobit(self, id_full, id_item, seq_range, db, indent, add_length, verbose):
+    def twobit(self, id_full, id_item, db, indent, verbose):
         seq = None
         itemsnotfound = None
         
@@ -1958,7 +1924,6 @@ class FetchSeq(object):  # The meat of the script
                 seq = SeqIO.read(output, 'fasta')
         else:
             itemsnotfound=id_item
-                
         return seq, itemsnotfound
 
 
@@ -1991,25 +1956,28 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
     id_list = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
 
-    if server is None and 'sql' in source.lower():
-        try:
+    if 'sql' in source.lower():
+        if server is None:
+            try:
+                if verbose > 1:
+                    print('No server received, opening server...', indent=indent)
+                server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
+                if verbose > 1:
+                    print('Done!', indent=indent)
+            except:
+                if verbose > 1:
+                    print('FAILED!', indent=indent)
+                raise
+        else:
             if verbose > 1:
-                print('No server received, opening server...', indent=indent)
-            server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
-            if verbose > 1:
-                print('Done!', indent=indent)
-        except:
-            if verbose > 1:
-                print('FAILED!', indent=indent)
-            raise
-    elif 'sql' in source.lower():
-        if verbose > 1:
-            print('Received server handle:', indent=indent)
-            print(server, indent=indent)
-        if verbose > 2:
-            print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
+                print('Received server handle:', indent=indent)
+                print(server, indent=indent)
+            if verbose > 2:
+                print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
     elif source.lower() in ['fasta','2bit','twobit']:
         print('Search type: ', source, indent=indent)
+    else:
+        raise Exception('Search using source {} has not yet been implemented!'.format(source))
     if verbose > 1:
         print('Creating FecSeq Processes...', indent=indent)
     fs_instances = [FetchSeqMP(id_queue=id_list, seq_out_queue=results,
@@ -2026,11 +1994,12 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
         print('Done!', indent=indent)
         print('Assigning FetchSeq records to queue... ', indent=indent)
     for i, id_rec in enumerate(ids):
-        assert isinstance(id_rec, str), 'id_rec #{0} ({1}) of type {2} was not a string object!'.format(i,
-                                                                                                        id_rec,
-                                                                                                        type(id_rec))
-        id_list.put(FetchSeq(id_rec=id_rec))
-    for fs in fs_instances:
+        try:
+            id_list.put(FetchSeq(id_rec=id_rec))
+        except AssertionError as err:
+            print(i, type(err), err, sep=' ')
+            break
+    for _ in fs_instances:
         id_list.put(None)
     if verbose > 1:
         print('Done!', indent=indent)
@@ -2038,9 +2007,7 @@ def fetchseqMP(ids, species, write=False, output_name='', delim='\t', id_type='b
     missing_items_list = list()
     if verbose > 1:
         print('Getting sequences from processes... ', indent=indent)
-    print('--------------', n_threads, indent=indent)
     n_jobs = len(ids)
-    # for i in range(len(ids)):
     while n_jobs:
         seq, missing = results.get()
         output_dict[seq[0]] = seq[1]
@@ -2334,7 +2301,7 @@ class RecBlast(object):
         fw_ids['ids'] = f_id_ranked
         fw_ids['pretty_ids'] = f_id_out_list
 
-        if not f_id_out_list:
+        if not f_id_ranked:
             print('Forward Blast yielded no hits, continuing to next sequence!')
             return rc_container_full
         if blast_type_1.lower() in ['blat', 'tblat']:
@@ -2355,11 +2322,10 @@ class RecBlast(object):
                 raise Exception('Invalid 2bit file!')
             if verbose > 1:
                 print(fw_id_db)
-
+        if 'sql' in fw_source.lower():
+            server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd,
+                                                  host=host, db=fw_id_db)
         try:
-            if 'sql' in fw_source.lower():
-                server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd,
-                                                      host=host, db=fw_id_db)
             if fw_source == 'strict':
                 if verbose:
                     print('Fetching Sequence from hit results!', indent=indent)
@@ -2382,7 +2348,7 @@ class RecBlast(object):
                 if verbose:
                     print('Beginning Fetchseq!', indent=indent)
                     # Note: BioSQL is NOT thread-safe! Throws tons of errors if executed with more than one thread!
-                seq_dict, missing_items = fetchseqMP(ids=f_id_out_list, species=target_species, delim='\t',
+                seq_dict, missing_items = fetchseqMP(ids=f_id_ranked, species=target_species, delim='\t',
                                                      id_type='brute', server=server, source=fw_source,
                                                      db=fw_id_db, host=host, driver=driver,
                                                      version=fw_id_db_version, user=user,
@@ -2405,14 +2371,15 @@ class RecBlast(object):
         recblast_sequence = []
 
         if seq_dict:
+            if verbose>2:
+                print('Ranking SeqDicts:', indent=indent)
             for item in f_id_ranked:
-                allitems = ''.join((str(i) for i in item))
                 if verbose > 3:
-                    print('allitems:', indent=indent)
-                    print(allitems, indent=indent + 1)
-                id_list = id_search(allitems, verbose=verbose, indent=indent)[1]
-                print(id_list)
-                recblast_sequence.append(seq_dict[id_list])
+                    print(''.join((str(i) for i in item)), indent=indent + 1)
+                try:
+                    recblast_sequence.append(seq_dict[item[0]])
+                except KeyError as err:
+                    raise Exception(type(err), item, ':', err)
             """
             if verbose > 3:
                 print('f-id-ranked: ', indent=indent)
@@ -2567,7 +2534,8 @@ class RecBlast(object):
                 except Exception:
                     new_anno = anno[0]
                 finally:
-                    reverse_blast_annotations.append('\t |[ {0} {1} ({2}) ]|'.format(new_anno, anno[1], anno[2]))
+                    reverse_blast_annotations.append('\t |[ {0}:{1}-{2}{3} ]|'.format(new_anno, anno[1][0],
+                                                                                      anno[1][1], anno[2]))
             if not reverse_blast_annotations:
                 print('No Reverse Blast Hits were found for this hit!', indent=indent+1)
                 print('Continuing to next Sequence!', indent=indent+1)

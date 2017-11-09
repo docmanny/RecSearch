@@ -356,13 +356,12 @@ class FilterRBHs(object):
         :return:
         """
         return query_record.name
-    def fun(self, hit, stat, verbose=2):
+    def fun(self, hit, stat, verbose=False):
 
         from RecBlast.recblast_MP import id_search
-        pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
+        pat = re.compile('\|\[(.*?):.*\]\|')  # regex for items in annotation
         try:
             hit_split = hit.description.split('|-|')
-            target_id = hit_split[0]
             top_anno = hit_split[1]
         except ValueError:
             print(hit.description, indent=2)
@@ -385,7 +384,7 @@ class FilterRBHs(object):
 def map_ranges(hit):
     """ Convenience function for RBC.results_map(). Replaces results with a tup of result descriptions and loci."""
     from RecBlast.recblast_MP import id_search
-    _, h_id, h_range, _ = id_search(hit.description)
+    _, h_id, h_range, _ = id_search(hit.description, verbose=False)
     h_start = h_range[0]
     h_end = h_range[1]
     h_strand = h_range[2]
@@ -413,9 +412,6 @@ def RBC_drop_many_to_one_hits(RBC):
                 continue
             else:
                 del RBC[species][query]['recblast_results'][hit_index]
-
-
-
 
 
 def count_reciprocal_best_hits(recblast_out):
@@ -734,8 +730,7 @@ def calc_effective_copy_number_by_coverage(query_record):
     if len(query_record['recblast_results']) == 0:
         return None
     else:
-        p = re.compile(':(\d+)-(\d+)')
-        raw_ranges = [p.findall(hit.description) for hit in query_record['recblast_results']]
+        raw_ranges = [hit.features[0].qualifiers['query_coverage'] for hit in query_record['recblast_results']]
         ranges = []
         for r in raw_ranges:
             try:
