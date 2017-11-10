@@ -29,7 +29,7 @@ def git_version():
         env['LANGUAGE'] = 'C'
         env['LANG'] = 'C'
         env['LC_ALL'] = 'C'
-        out = subprocess.Popen(cmd, stdout = subprocess.PIPE, env=env).communicate()[0]
+        out = subprocess.Popen(cmd, stdout=subprocess.PIPE, env=env).communicate()[0]
         return out
 
     try:
@@ -44,7 +44,6 @@ def git_version():
 if 'dev' in __version__:
     __version__ += '-' + git_version()
 
-# Functions that are essential yet unrelated to recblast_MP.py
 
 class ProgressBar(object):
     """Adapted from Romuald Brunet at StackExchange"""
@@ -121,6 +120,5 @@ def merge_ranges(ranges):
     yield current_start, current_stop
 
 
-def flatten(list):
-    return [item for sublist in list for item in sublist]
-
+def flatten(lst):
+    return [item for sublist in lst for item in sublist]

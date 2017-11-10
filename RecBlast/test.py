@@ -7,8 +7,8 @@ from Bio.SeqRecord import SeqRecord
 # from pytest_mock import mocker
 from BioSQL.BioSeq import DBSeqRecord
 
-import RecBlast.Auxilliary as aux
-import RecBlast.recblast_MP as rb
+from RecBlast import Auxilliary, RBC, Search, FetchSeq, RecBlast
+
 
 try:
     BLASTDB=os.environ['BLASTDB']

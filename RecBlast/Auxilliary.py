@@ -6,7 +6,31 @@ from pathlib import Path
 import mygene
 
 from RecBlast import print, merge_ranges
+from RecBlast.Search import id_search
 
+
+def percent_identity_searchio(hit, is_protein=True):
+    """Calculates percent identity based on entire hit. Adapted from UCSC BLAT FAQ and Biopython."""
+    from math import log
+    size_mul = 3 if is_protein else 1
+    qali_size = size_mul * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
+    tali_size = sum([i[-1] - i[0] for i in merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit])])
+    ali_size = min(qali_size, tali_size)
+    if ali_size <= 0:
+        return 0
+    size_dif = qali_size - tali_size
+    size_dif = 0 if size_dif < 0 else size_dif
+    sum_match = sum([i.match_num for i in hit])
+    sum_rep = sum([i.match_rep_num for i in hit])
+    sum_mismatch = sum([i.mismatch_num for i in hit])
+    total = size_mul * (sum_match + sum_rep + sum_mismatch)
+    if total != 0:
+        millibad = (1000 * (sum([i.mismatch_num for i in hit]) * size_mul + sum([i.query_gap_num for i in hit]) +
+                            round(3 * log(1 + size_dif)))) / total
+    else:
+        raise Exception('Somehow your total in the percent_identity function was 0, so you broke the script!')
+    perc_ident = 100 - (millibad*0.1)
+    return perc_ident
 
 
 def cleanup_fasta_input(handle, filetype='fasta', write=True):
@@ -153,8 +177,6 @@ def cull_reciprocal_best_hit(recblast_out):
 
 def simple_struct(recblast_out, verbose=True):
     """Returns a nice diagram of queries, targets, and annotations"""
-
-    from RecBlast.recblast_MP import id_search
     master_dict = {}
     pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
     if isinstance(recblast_out, list):
@@ -268,7 +290,7 @@ def simple_struct(recblast_out, verbose=True):
 
 
 def rc_out_stats(rc_out):
-    from RecBlast.recblast_MP import RecBlastContainer
+    from RecBlast.RecBlast import RecBlastContainer
     # Todo: use 'from Collections import Counter' to rapidly count duplicates
     if isinstance(rc_out, list):
         holder =[]
@@ -358,7 +380,7 @@ class FilterRBHs(object):
         return query_record.name
     def fun(self, hit, stat, verbose=False):
 
-        from RecBlast.recblast_MP import id_search
+        from RecBlast.RecBlast import id_search
         pat = re.compile('\|\[(.*?):.*\]\|')  # regex for items in annotation
         try:
             hit_split = hit.description.split('|-|')
@@ -383,7 +405,7 @@ class FilterRBHs(object):
 
 def map_ranges(hit):
     """ Convenience function for RBC.results_map(). Replaces results with a tup of result descriptions and loci."""
-    from RecBlast.recblast_MP import id_search
+    from RecBlast.RecBlast import id_search
     _, h_id, h_range, _ = id_search(hit.description, verbose=False)
     h_start = h_range[0]
     h_end = h_range[1]
@@ -416,7 +438,7 @@ def RBC_drop_many_to_one_hits(RBC):
 
 def count_reciprocal_best_hits(recblast_out):
     from collections import Counter
-    from RecBlast.recblast_MP import id_search
+    from RecBlast.RecBlast import id_search
     pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
     species_counters = {}
     for species, species_dict in recblast_out.items():
@@ -477,7 +499,7 @@ def export_count_as_csv(rec_hit_counter_dict, filename='RecBlastCount'):
 
 def count_reciprocal_best_hits_from_pandas(pandas_df):
 
-    from RecBlast.recblast_MP import id_search
+    from RecBlast.RecBlast import id_search
     from io import StringIO
     from Bio import SeqIO
     pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
@@ -528,7 +550,7 @@ def sqlite_to_pandas(sql_file, table_name):
 
 
 def filter_hits_pandas(pandas_df):
-    from RecBlast.recblast_MP import id_search
+    from RecBlast.RecBlast import id_search
     from Bio import SeqIO
     from io import StringIO
     def filter_func(row):
