@@ -267,7 +267,7 @@ class RecBlastContainer(dict):
                 filename = kwargs.pop('filename', 'RecBlastOutput.bed').replace(' ', '_')
                 filename += '' if filename.endswith('.bed') else '.bed'
                 if filetype.lower() == 'bed-min':
-                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=4, **kwargs)
+                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=4, custom=custom)
                 elif filetype.lower() == 'bed-complete':
                     nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom='complete')
                 else:

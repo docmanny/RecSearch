@@ -1,17 +1,21 @@
 import re
 import sys
 from collections import namedtuple, Counter, OrderedDict
-from pathlib import Path
-
-import mygene
-
+from math import log
+from Bio import SeqIO
 from RecBlast import print, merge_ranges
 from RecBlast.Search import id_search
-
+from itertools import chain, islice
+import mygene
+from pathlib import Path
+from RecBlast.RBC import RecBlastContainer
+from io import StringIO
+import pandas as pd
+import sqlite3
 
 def percent_identity_searchio(hit, is_protein=True):
     """Calculates percent identity based on entire hit. Adapted from UCSC BLAT FAQ and Biopython."""
-    from math import log
+
     size_mul = 3 if is_protein else 1
     qali_size = size_mul * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
     tali_size = sum([i[-1] - i[0] for i in merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit])])
@@ -34,7 +38,7 @@ def percent_identity_searchio(hit, is_protein=True):
 
 
 def cleanup_fasta_input(handle, filetype='fasta', write=True):
-    from Bio import SeqIO
+
     oldlist = [i for i in SeqIO.parse(handle, filetype)]
     names = set([i.name for i in oldlist])
     newlist = list()
@@ -50,8 +54,7 @@ def cleanup_fasta_input(handle, filetype='fasta', write=True):
 
 
 def massively_translate_fasta(SeqIter):
-    from itertools import chain, islice
-    import mygene
+
     mg = mygene.MyGeneInfo()
     all_genes = []
     def chunks(iterable, size=1000):
@@ -94,7 +97,7 @@ def translate_annotation(annotation, orig='refseq', to='symbol', species='human'
 
 
 def nr_by_longest(handle, filetype='fasta', write=True):
-    from Bio import SeqIO
+
     oldlist = SeqIO.parse(handle, filetype)
     seqdict = {}
 
@@ -116,7 +119,7 @@ def nr_by_longest(handle, filetype='fasta', write=True):
             seqdict[seq.id] = seq
     newlist = (seq for _, seq in seqdict.items())
     if write:
-        from pathlib import Path
+
         outhandle = 'nr_' + str(Path(handle).name)
         with Path(outhandle).open('w') as outf:
             SeqIO.write(newlist, outf, filetype)
@@ -290,7 +293,6 @@ def simple_struct(recblast_out, verbose=True):
 
 
 def rc_out_stats(rc_out):
-    from RecBlast.RecBlast import RecBlastContainer
     # Todo: use 'from Collections import Counter' to rapidly count duplicates
     if isinstance(rc_out, list):
         holder =[]
@@ -367,7 +369,7 @@ class FilterRBHs(object):
         """Convenience class for use with RecBlastContainer.result_filter(). Removes non-Reciprocal Best Hits from RBC.
         """
         self._recblast_object = 'query_record'
-        self.args = {'FUN': self.fun, 'summary_statistic': self._stat, 'recblast_object': self._recblast_object}
+        self.args = {'func': self.fun, 'summary_statistic': self._stat, 'recblast_object': self._recblast_object}
         for k,v in kwargs.items():
             self.args[k] = v
 
@@ -380,7 +382,7 @@ class FilterRBHs(object):
         return query_record.name
     def fun(self, hit, stat, verbose=False):
 
-        from RecBlast.RecBlast import id_search
+
         pat = re.compile('\|\[(.*?):.*\]\|')  # regex for items in annotation
         try:
             hit_split = hit.description.split('|-|')
@@ -405,7 +407,6 @@ class FilterRBHs(object):
 
 def map_ranges(hit):
     """ Convenience function for RBC.results_map(). Replaces results with a tup of result descriptions and loci."""
-    from RecBlast.RecBlast import id_search
     _, h_id, h_range, _ = id_search(hit.description, verbose=False)
     h_start = h_range[0]
     h_end = h_range[1]
@@ -437,8 +438,6 @@ def RBC_drop_many_to_one_hits(RBC):
 
 
 def count_reciprocal_best_hits(recblast_out):
-    from collections import Counter
-    from RecBlast.RecBlast import id_search
     pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
     species_counters = {}
     for species, species_dict in recblast_out.items():
@@ -499,9 +498,6 @@ def export_count_as_csv(rec_hit_counter_dict, filename='RecBlastCount'):
 
 def count_reciprocal_best_hits_from_pandas(pandas_df):
 
-    from RecBlast.RecBlast import id_search
-    from io import StringIO
-    from Bio import SeqIO
     pat = re.compile('\|\[(.*?)\]\|')  # regex for items in annotation
     spec_list = list(pandas_df.target_species.unique())
     species_counters = {}
@@ -541,8 +537,7 @@ def count_reciprocal_best_hits_from_pandas(pandas_df):
 
 
 def sqlite_to_pandas(sql_file, table_name):
-    import pandas as pd
-    import sqlite3
+
 
     conn = sqlite3.connect(sql_file)
     df = pd.read_sql_query("select * from {0};".format(table_name), conn)
@@ -550,9 +545,6 @@ def sqlite_to_pandas(sql_file, table_name):
 
 
 def filter_hits_pandas(pandas_df):
-    from RecBlast.RecBlast import id_search
-    from Bio import SeqIO
-    from io import StringIO
     def filter_func(row):
         qrec = row.query_record
         qrec = SeqIO.read(StringIO(qrec), 'fasta')
@@ -752,11 +744,11 @@ def calc_effective_copy_number_by_coverage(query_record):
     if len(query_record['recblast_results']) == 0:
         return None
     else:
-        raw_ranges = [hit.features[0].qualifiers['query_coverage'] for hit in query_record['recblast_results']]
+        raw_ranges = (hit.features[0].qualifiers['query_coverage'] for hit in query_record['recblast_results'])
         ranges = []
         for r in raw_ranges:
             try:
-                rng = (int(r[1][0]), int(r[1][1]))
+                rng = (int(r[0]), int(r[1]))
                 ranges.append(sorted(rng))
             except IndexError:
                 continue
@@ -766,5 +758,5 @@ def calc_effective_copy_number_by_coverage(query_record):
             return 0
         else:
             sum_nuc = sum([sum([sum([s in range(r[0], r[1]) for s in range(i[0], i[1])]) for i in ranges]) for r in coverage])
-            return sum_nuc/sum_coverage
+            return round(sum_nuc/sum_coverage, 2)
 

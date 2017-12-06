@@ -293,7 +293,7 @@ class RecBlastMPThread(multiprocessing.Process):
     def __init__(self, proc_id, rb_queue, rb_results_queue, fw_search_db, infile_type, output_type, search_db_loc,
                  query_species, fw_search_type, rv_search_type, fw_search_local, rv_search_local, rv_search_db, expect,
                  perc_score, perc_span, outfolder, indent, reciprocal_method, hit_name_only, translate_hit_name,
-                 perc_ident, perc_length, megablast, email, id_type, fw_source, id_db, fetch_batch_size, passwd,
+                 perc_ident, perc_length, megablast, email, id_type, id_source, id_db, fetch_batch_size, passwd,
                  host, user, driver, id_db_version, verbose, n_threads, fw_search_kwargs, rv_search_kwargs,
                  write_intermediates):
         multiprocessing.Process.__init__(self)
@@ -318,7 +318,7 @@ class RecBlastMPThread(multiprocessing.Process):
         self.megablast = megablast
         self.email = email
         self.id_type = id_type
-        self.fw_source = fw_source
+        self.id_source = id_source
         self.host = host
         self.user = user
         self.driver = driver
@@ -359,7 +359,7 @@ class RecBlastMPThread(multiprocessing.Process):
                                          perc_ident=self.perc_ident, perc_span=self.perc_span,
                                          perc_length=self.perc_length, megablast=self.megablast, email=self.email,
                                          id_type=self.id_type,
-                                         fw_source=self.fw_source, id_db=self.id_db, 
+                                         id_source=self.id_source, id_db=self.id_db, 
                                          fetch_batch_size=self.batch_size,
                                          passwd=self.passwd, translate_hit_name=self.translate_hit_name,
                                          id_db_version=self.id_db_version, verbose=self.verbose, 
@@ -392,7 +392,7 @@ class RecBlast(object):
     def __call__(self, fw_search_db, infile_type, output_type, search_db_loc, reciprocal_method,
                  query_species, fw_search_type, rv_search_type, fw_search_local, rv_search_local, rv_search_db, expect,
                  perc_score, indent, hit_name_only, perc_span, translate_hit_name,
-                 perc_ident, perc_length, megablast, email, id_type, fw_source, id_db, fetch_batch_size, passwd,
+                 perc_ident, perc_length, megablast, email, id_type, id_source, id_db, fetch_batch_size, passwd,
                  host, user, driver, id_db_version, verbose, n_threads, fw_search_kwargs, rv_search_kwargs,
                  write_intermediates, proc_id):
         # Simple shunt to minimize having to rewrite code.
@@ -525,11 +525,11 @@ class RecBlast(object):
                 raise FileNotFoundError('Invalid 2bit file!')
             if verbose > 1:
                 print(id_db)
-        if 'sql' in fw_source.lower():
+        if 'sql' in id_source.lower():
             server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd,
                                                   host=host, db=id_db)
         try:
-            if fw_source == 'strict':
+            if id_source == 'strict':
                 if verbose:
                     print('Fetching Sequence from hit results!', indent=indent)
                 seq_dict = {}
@@ -553,7 +553,7 @@ class RecBlast(object):
                     print('Beginning Fetchseq!', indent=indent)
                     # Note: BioSQL is NOT thread-safe! Throws tons of errors if executed with more than one thread!
                 seq_dict, missing_items = fetchseq(ids=f_id_ranked, species=target_species, delim='\t',
-                                                   id_type='brute', server=server, source=fw_source,
+                                                   id_type='brute', server=server, source=id_source,
                                                    db=id_db, host=host, driver=driver,
                                                    version=id_db_version, user=user,
                                                    passwd=passwd, email=email, batch_size=fetch_batch_size,
@@ -713,7 +713,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
                  rv_search_local=False,
                  expect=10, perc_score=0.5, perc_span=0.1, perc_ident=0.50, perc_length=0.5, megablast=True,
                  email='', run_name='default', output_loc='./RecBlast_output',
-                 id_type='brute', fw_source='sql', id_db='bioseqdb', fetch_batch_size=50,
+                 id_type='brute', id_source='sql', id_db='bioseqdb', fetch_batch_size=50,
                  passwd='', hit_name_only=False, min_mem=False,
                  id_db_version='auto', search_db_loc='/usr/db/search_db_loc', indent=0, translate_hit_name=True,
                  verbose='v', max_n_processes='auto', n_threads=2, write_intermediates=False, write_final=True,
@@ -731,7 +731,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
                              fw_search_local=True, rv_search_local=True,
                              expect=10, perc_score=0.009, perc_span=0.1, perc_ident=0.69, perc_length=0.001,
                              megablast=True, email='', run_name='EHM_AvA',
-                             id_type='brute', fw_source='2bit', id_db='auto', fetch_batch_size=50,
+                             id_type='brute', id_source='2bit', id_db='auto', fetch_batch_size=50,
                              passwd='', hit_name_only=True, min_mem=True,
                              id_db_version='auto', search_db_loc='/usr/db/BLAT', indent=0,
                              verbose='vvv', max_n_processes='auto', n_threads=2, write_intermediates=False,
@@ -759,7 +759,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
     :param megablast:
     :param email:
     :param id_type:
-    :param fw_source:
+    :param id_source:
     :param id_db:
     :param fetch_batch_size:
     :param passwd:
@@ -784,11 +784,12 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
     # Verbose-ometer
     if isinstance(verbose, str):
         verbose = verbose.lower().count('v')
-    elif isinstance(verbose, int) and verbose > 0:
+    elif isinstance(verbose, int) and verbose >= 0:
         pass
     else:
-        raise TypeError('Verbose must be either be an integer greater than or equal to zero, or a number of v\'s equal '
-                        'to the desired level of verbosity')
+        raise TypeError('Verbose was type {}; must be either be an integer greater '
+                        'than or equal to zero, or a number of v\'s equal '
+                        'to the desired level of verbosity'.format(type(verbose)))
     if verbose:
         print('RecBlast version: ', __version__)
         print('Using BioPython version: ', bp_version)
@@ -991,7 +992,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
                                             perc_ident=perc_ident, perc_span=perc_span,
                                             translate_hit_name=translate_hit_name,
                                             perc_length=perc_length, megablast=megablast, email=email, id_type=id_type,
-                                            fw_source=fw_source, id_db=id_db, fetch_batch_size=fetch_batch_size,
+                                            id_source=id_source, id_db=id_db, fetch_batch_size=fetch_batch_size,
                                             passwd=passwd, reciprocal_method=reciprocal_method,
                                             id_db_version=id_db_version, verbose=verbose, n_threads=n_threads,
                                             host=host, outfolder=outfolder, indent=indent+1,
