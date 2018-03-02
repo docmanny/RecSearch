@@ -1,6 +1,7 @@
 import re
 import sys
 from collections import namedtuple, Counter, OrderedDict
+from operator import itemgetter
 from math import log
 from Bio import SeqIO
 from RecBlast import print, merge_ranges
@@ -12,29 +13,6 @@ from RecBlast.RBC import RecBlastContainer
 from io import StringIO
 import pandas as pd
 import sqlite3
-
-def percent_identity_searchio(hit, is_protein=True):
-    """Calculates percent identity based on entire hit. Adapted from UCSC BLAT FAQ and Biopython."""
-
-    size_mul = 3 if is_protein else 1
-    qali_size = size_mul * sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
-    tali_size = sum([i[-1] - i[0] for i in merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit])])
-    ali_size = min(qali_size, tali_size)
-    if ali_size <= 0:
-        return 0
-    size_dif = qali_size - tali_size
-    size_dif = 0 if size_dif < 0 else size_dif
-    sum_match = sum([i.match_num for i in hit])
-    sum_rep = sum([i.match_rep_num for i in hit])
-    sum_mismatch = sum([i.mismatch_num for i in hit])
-    total = size_mul * (sum_match + sum_rep + sum_mismatch)
-    if total != 0:
-        millibad = (1000 * (sum([i.mismatch_num for i in hit]) * size_mul + sum([i.query_gap_num for i in hit]) +
-                            round(3 * log(1 + size_dif)))) / total
-    else:
-        raise Exception('Somehow your total in the percent_identity function was 0, so you broke the script!')
-    perc_ident = 100 - (millibad*0.1)
-    return perc_ident
 
 
 def cleanup_fasta_input(handle, filetype='fasta', write=True):
@@ -671,7 +649,10 @@ class DataIntegratorParser(object):
 def read_bed(bedfile, key_col = 3):
     """Returns a dict using the given 0-indexed key_column"""
     d = {}
-    with open(bedfile) as bed:
+    bedfile = Path(bedfile)
+    assert bedfile.exists(), "Given bedfile path does not exist!"
+    assert bedfile.is_file(), "Given bedfile path was not a file! Did you provide a directory?"
+    with bedfile.open() as bed:
         for line in bed:
             items = line.strip().split('\t')
             for i, j in enumerate(items):
@@ -696,7 +677,6 @@ def read_bed(bedfile, key_col = 3):
                 else:
                     d[items[key_col]] = items
     return d
-
 
 def drop_overlaps_bed(bedfile):
     d = bedfile if isinstance(bedfile, dict) else read_bed(bedfile, key_col=slice(0,3))
@@ -760,3 +740,190 @@ def calc_effective_copy_number_by_coverage(query_record):
             sum_nuc = sum([sum([sum([s in range(r[0], r[1]) for s in range(i[0], i[1])]) for i in ranges]) for r in coverage])
             return round(sum_nuc/sum_coverage, 2)
 
+
+def bed_get_flanking_regions(bedfile, left_range, right_range, genome_file=None):
+    """Returns two new bedfiles with ranges left-and-right of each item of the original file, respectively.
+
+    :param str bedfile:
+    :param left_range: Either a single positive integer indicating the left-most number of bases in range;
+                        or a tuple of two integers indicating the left-and-right bound of the range.
+    :param right_range: Either a single positive integer indicating the right-most number of bases in range;
+                        or a tuple of two integers indicating the right-and-left bound of the range.
+    :return:
+    """
+    if isinstance(left_range, int):
+        left_range = (left_range, 0)
+    if isinstance(right_range, int):
+        right_range = (0, right_range)
+
+    assert isinstance(left_range, tuple), "Parameter 'left_range' must either be an integer or a tuple!"
+    assert len(left_range) == 2, "Parameter 'left_range' must be a tuple of length 2!"
+    assert left_range[0] > left_range[1] or left_range == (0,0), "The left-side range modifier of left_range must be " \
+                                                                 "less than the right-side!"
+    assert isinstance(right_range, tuple), "Parameter 'right_range' must either be an integer or a tuple!"
+    assert len(right_range) == 2, "Parameter 'right_range' must be a tuple of length 2!"
+    assert right_range[0] < right_range[1] or right_range == (0,0), "The right-side range modifier of left_range must" \
+                                                                    " be greater than the left-side!"
+    bedfile = Path(bedfile)
+    assert bedfile.exists(), "Given bedfile path does not exist!"
+    assert bedfile.is_file(), "Given bedfile path was not a file! Did you provide a directory?"
+    leftbed = bedfile.with_name(bedfile.stem +
+                                "_left_Offset{0}_Size{1}".format(left_range[1], 
+                                                                 left_range[0] - left_range[1]) + 
+                                bedfile.suffix)
+    rightbed = bedfile.with_name(bedfile.stem +
+                                "_right_Offset{0}_Size{1}".format(right_range[1], 
+                                                                 right_range[0] - right_range[1]) + 
+                                bedfile.suffix)
+    granges = {chrm:int(size) for chrm, size
+               in [line.strip().split("\t") for line in open(genome_file)]} if genome_file else None
+    with bedfile.open() as bf, leftbed.open("w") as lbf, rightbed.open("w") as rbf:
+        records = (line.strip().split('\t')[0:4] for line in bf)
+        for (chr, s, e, id) in records:
+            if left_range != (0,0):
+                left = [chr,
+                        int(s) - left_range[0],
+                        int(s) - left_range[1],
+                        id + "_left"]
+                ldiff = 0
+                if left[2]>left[1]>0:
+                    left[3] += "_offset-{0}_size-{1}".format(left_range[1],
+                                                             left[2] - left[1])
+                else:
+                    if left[1]<0:
+                        ldiff = -left[1]  # note its '-' because left[1] is negative
+                        left[2] += ldiff
+                        left[2] = left[2] if left[2] <= int(s) else int(s)
+                        left[1] = 0
+                        if left[1] == left[2]:
+                            left[2] += 1
+                            ldiff -= 1
+                        left[3] += "_offset-{0}_size-{1}".format(left_range[1] - ldiff,
+                                                                 left[2]-left[1])
+                    else:
+                        left[3] += "_offset-{0}_size-{1}".format(left_range[1],
+                                                                 left[2] - left[1])
+                left = (str(i) for i in left)
+                lbf.write('\t'.join(left) + "\n")
+            if right_range != (0,0):
+                right = [chr,
+                         int(e) + right_range[0],
+                         int(e) + right_range[1],
+                         id + "_right"]
+                if granges:
+                    if granges[chr] <= right[2] or granges[chr] <= right[1]:
+                        rdiff = granges[chr] - right[2]
+                        right[2] = granges[chr]
+                        right[1] += rdiff
+                        right[1] = right[1] if right[1]>=int(e) else int(e)
+                        if right[2] == right[1]:
+                            right[1] -= 1
+                            rdiff -= 1
+                        right[3] += "_offset-{0}_size-{1}".format(right_range[0] + rdiff,
+                                                                  right[2] - right[1])
+                    else:
+                        right[3] += "_offset-{0}_size-{1}".format(right_range[0],
+                                                                  right[2] - right[1])
+                else:
+                    right[3] += "_offset-{0}_size-{1}".format(right_range[0],
+                                                              right[2] - right[1])
+                right = (str(i) for i in right)
+                rbf.write('\t'.join(right) + "\n")
+    return
+
+
+def bed_rename_list_post_merge(bedfile):
+    pass
+
+
+
+def bed_extract_duplicates(bedfile, outfile="", verbose = False):
+    bedfile = Path(bedfile)
+    assert bedfile.exists(), "Given bedfile path does not exist!"
+    assert bedfile.is_file(), "Given bedfile path was not a file! Did you provide a directory?"
+    bed_dict = read_bed(bedfile)
+    hits = sorted(bed_dict.keys())
+    counts = Counter((''.join(hit.split("_")[:-1]) for hit in hits))
+    duphits = (hit for hit in hits if counts[hit.split("_")[0]] > 1)
+    outfile = Path(outfile) if outfile else bedfile.with_suffix(".bed.dups")
+    try:
+        first = next(duphits)
+        if verbose:
+            print(first, "\t", counts[first.split("_")[0]])
+        with outfile.open("w") as of:
+            of.write("\t".join((str(i) for i in bed_dict[first])) + "\n")
+            for hit in duphits:
+                if verbose:
+                    print(hit, "\t", counts[hit.split("_")[0]])
+                of.write("\t".join((str(i) for i in bed_dict[hit]))+"\n")
+    except StopIteration:
+        if verbose:
+            print("No duplicates found in file!")
+
+def merge_ids(fasta):
+    outfasta = Path(fasta)
+    with outfasta.with_name(outfasta.name+"_joined").open('w') as outfile:
+        from Bio import SeqIO
+        bla = SeqIO.parse(fasta, "fasta")
+        newrec = {}
+        for rec in bla:
+            rec.id = rec.id.split("_left")[0].split("_right")[0]
+            if rec.id in newrec:
+                newrec[rec.id].seq += rec.seq
+                newrec[rec.id].description += "\t" + rec.description
+            else:
+                newrec[rec.id] = rec
+        SeqIO.write((v for v in newrec.values()), outfile, "fasta")
+
+
+class BLASTSearchParameters(object):
+    def __init__(self, blast_type, blastdb_path, blast_db="auto", expect=10, perc_score=0.009, perc_span=0.1,
+                 ncbi_search=False, perc_ident=0.69, perc_length=0.001, megablast=True, blastdb_version='auto',
+                 email = '', **kwargs):
+        self.search_type = blast_type
+        self.search_local = not ncbi_search
+        self.email = email
+        self.expect = expect
+        self.perc_score = perc_score
+        self.perc_ident = perc_ident
+        self.perc_span = perc_span
+        self.perc_length = perc_length
+        self.megablast = megablast
+        self.id_db_version = blastdb_version
+        self.id_db_path = blastdb_path
+        self.search_db = blast_db if isinstance(blast_db, dict) or isinstance(blast_db, str) else "auto"
+        for k, v in kwargs:
+            setattr(self, k, v)
+        if ncbi_search:
+            assert "@" in self.email, "If using NCBI for remote BLAST searching, a valid email must be set!"
+
+class BLATSearchParameters(object):
+    def __init__(self, blat_type, twobit_path, twobit_port_dict, gfserver_host="localhost",
+                 expect=10, perc_score=0.009, perc_span=0.1, perc_ident=0.69,
+                 perc_length=0.001, twobit_file_dict="auto", twobit_version='auto'):
+        self.search_type = blat_type
+        self.expect = expect
+        self.perc_score = perc_score
+        self.perc_ident = perc_ident
+        self.perc_span = perc_span
+        self.perc_length = perc_length
+        self.search_local = gfserver_host
+        self.id_db_version = twobit_version
+        self.id_db_path = twobit_path
+        self.id_db = twobit_file_dict if (isinstance(twobit_file_dict, dict) or
+                                          isinstance(twobit_file_dict, str)) else "auto"
+        self.search_db = twobit_port_dict
+        self.id_source = "twobit"
+
+
+class SQLServerParameters(object):
+    def __init__(self, host='localhost', id_db='bioseqdb', user='postgres', driver='psycopg2',
+                 password='', id_db_version='auto'):
+        self.id_source = 'sql'
+        self.driver = driver
+        self.host = host
+        self.id_db = id_db
+        self.user = user
+        self.password = password
+        self.id_db = id_db
+        self.id_db_version = id_db_version

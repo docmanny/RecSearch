@@ -1,296 +1,30 @@
 import logging
 from contextlib import redirect_stdout
 from datetime import datetime
-from operator import itemgetter
 from pathlib import Path
 
 import multiprocess as multiprocessing
 
 from Bio import SearchIO, SeqIO
 from Bio import __version__ as bp_version
-from Bio.Blast import NCBIXML
+from io import StringIO
 from Bio.SeqRecord import SeqRecord
 from BioSQL import BioSeqDatabase
 
-from RecBlast import print, ProgressBar, merge_ranges, flatten, __version__
+from RecBlast import print, ProgressBar, __version__
 from RecBlast.FetchSeq import fetchseq, biosql_get_sub_db_names
-from RecBlast.Search import Search, get_searchdb, blat_server
+from RecBlast.Search import Search, get_searchdb, blat_server, id_ranker
 from RecBlast.RBC import RecBlastContainer
 from RecBlast.WarningsExceptions import *
-from RecBlast.Auxilliary import translate_annotation, percent_identity_searchio
-
-
-def id_ranker(record, perc_score, expect, perc_length, perc_ident, perc_span=0.1, min_hsps=1, hsp_cumu_score=True,
-              seq_method='whole', indent=0, verbose=1, method='all', samestrand=True):
-    """Filters results based on score, expectation value, length, percent identity, and span; returns a sorted list.
-
-    :param record: Either a SearchIO.QueryResult or a Bio.Blast.Record.
-    :param float perc_score: Minimum percentage of top score for a hit.
-    :param float expect: Maximum e-value for a hit.
-    :param float perc_length: Minimum percent of the longest hit by query coverage for a hit.
-    :param int perc_ident: Minimum percent identity of a hit.
-    :param float perc_span: Minimum percentage of the longest length-span of an HSP within a hit.
-    :param int min_hsps: Minimum number of hsps needed per hit.
-    :param bool hsp_cumu_score: Use cumulative HSP scores rather than individual scores. (LEAVE AS DEFAULT)
-    :param str seq_method: How should id_ranker compile the sequence ranges? [Default: 'whole']
-    :param int indent: Indent level for pretty print. [Default: 0]
-    :param int verbose: Level of verbose output? [Default: 1]
-    :param str method: Return all ranked hits ('all'), or only the top hit ('best-hit')? [Default: 'all']
-    :param bool samestrand: Should the function filter hits with HSPs on different strands? [Default:True]
-    :return:
-    """
-    id_list = []
-    if verbose:
-        print('Beginning ID_Ranker...', indent=indent)
-    if isinstance(record, SearchIO.QueryResult):
-        print('SearchIO detected.', indent=indent)
-        # Figure out what kind of search program was run:
-        if record.program == 'blat':
-            if verbose > 2:
-                print('Results obtained from BLAT run.', indent=indent+1)
-        elif 'blast' in record.program:
-            if verbose > 2:
-                print('Results obtained from BLAST run.', indent=indent+1)
-        else:
-            raise NotImplementedError('Sorry, your program {} is not yet '
-                                      'implemented for RecBlast!'.format(record.program))
-
-        # Create filter functions:
-        def hit_minhsps(hit):
-            return len(hit.hsps) >= min_hsps
-
-        def hit_minscores(hit):
-            return sum([hsp.score for hsp in hit.hsps]) >= int(perc_score * top_score)
-
-        def hit_minlength(hit):
-            return sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])
-                        ]) >= perc_length * top_length
-
-        def hit_perc_id(hit):
-            # return _percent_identity_searchio(hit) >= perc_ident
-            return True
-
-        def hit_hsp_span(hit):
-            top_span = max([hsp.hit_span for hsp in hit])
-            hit = hit.filter(lambda hsp: hsp.hit_span >= int(perc_span * top_span))
-            return hit
-
-        def hit_same_strand(hit):
-            x = [bla.hit_strand_all for bla in hit.hsps]
-            y = all(s > 0 for s in flatten(x)) or all(s < 0 for s in flatten(x)) or \
-                all(s == 0 for s in flatten(x)) or None
-            return y
-
-        # Three more functions for to make great progress
-        def sort_scores(hit):
-            return sum([hsp.score for hsp in hit.hsps])
-
-        def hit_target_span(hit):
-            return list(merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit]))
-
-        def hit_query_coverage(hit):
-            return list(merge_ranges(flatten([list(merge_ranges(hsp.query_range_all)) for hsp in hit])))
-
-        # Get top stats:
-        top_score = max([sum([hsp.score for hsp in hit.hsps]) for hit in record])
-        if verbose > 1:
-            print('Top score for {}:\t'.format(record.id), top_score, indent=indent)
-        top_length = max([sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end)
-                                                                   for hsp in hit])
-                               ]) for hit in record])
-        if verbose > 1:
-            print('Longest hit for {}:\t'.format(record.id), top_length, indent=indent)
-
-        if verbose > 2:
-            print("ALL HITS STATS:")
-            print('Hit Name:\t|\t# HSPs\t|\tScore:\t|\tLength:\t|\tP.Ident\t|\thsp_span_list\t|')
-            for hit in record:
-                name = hit.id
-                n_hsp = len(hit.hsps)
-                score = sum([hsp.score for hsp in hit.hsps])
-                length = sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
-                ident = percent_identity_searchio(hit)
-                span = [hsp.hit_span for hsp in hit]
-                print('{HitName}\t|\t{HSP}\t|\t{Score}\t|'
-                      '\t{Length}\t|\t{PIdent}\t|\t{span_list}\t|'.format(HitName=name, HSP=n_hsp, Score=score,
-                                                                          Length=length, PIdent=ident, span_list=span))
-        # Execute filters:
-        # HSP
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record.id), len(record), indent=indent)
-            print('Filtering based on min. number of HSPs...', indent=indent)
-        record1 = record.hit_filter(hit_minhsps)
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record1.id), len(record1), indent=indent)
-        if not record1:
-            raise NoHitsError('No hits in Query Results have {} or more HSPs!'.format(min_hsps))
-        # HSP.span
-        if verbose > 1:
-            print('Filtering out all HSPs with a span below {} of the longest HSP...'.format(perc_span), indent=indent)
-        record2 = record1.hit_map(hit_hsp_span)
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record2.id), len(record2), indent=indent)
-        # Length
-        if verbose > 1:
-            print('Filtering out all hits shorter than {}...'.format(perc_length*top_length), indent=indent)
-        record3 = record2.hit_filter(hit_minlength)
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record3.id), len(record3), indent=indent)
-        if not record3:
-            raise NoHitsError('No hits in Query Results above min_length {0}!'.format((top_length * perc_length)))
-        # Score
-        if verbose > 1:
-            print('Filtering out all hits with scores less than {}...'.format(top_score * perc_score), indent=indent)
-        record4 = record3.hit_filter(hit_minscores)
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record4.id), len(record4), indent=indent)
-        if not record4:
-            raise NoHitsError('No hits in Query Results above minimum score {0}!'.format((top_score * perc_score)))
-        # Percent Identity
-        if verbose > 1:
-            print('Filtering out all hits with a percent identity below {}...'.format(perc_ident),
-                  indent=indent)
-        record5 = record4.hit_filter(hit_perc_id)
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record5.id), len(record5), indent=indent)
-        if not record5:
-            raise NoHitsError('No hits in Query Results above minimum score {0}!'.format((top_score * perc_score)))
-        # If strand is set to strict, it will filter out hits that have different strandedness in HSPs
-        if samestrand:
-            if verbose > 1:
-                print('Filtering out all hits whose HSPs are not on the same strand...', indent=indent)
-            record6 = record5.hit_filter(hit_same_strand)
-            if verbose > 1:
-                print('Number of hits for {}:\t'.format(record6.id), len(record6), indent=indent)
-            if not record6:
-                raise NoHitsError('No hits in Query Results with all HSPs on the same strand!')
-        else:
-            record6 = record5
-        # Sorting them for good measure
-        if verbose > 1:
-            print('Sorting all hits by descending scores!', indent=indent)
-        record6.sort(key=sort_scores, reverse=True, in_place=True)
-        if verbose > 1:
-            print('Done!', indent=indent)
-        # Add items to id_list
-        for hit in record6:
-            seq_name = hit.id
-            hts = hit_target_span(hit)
-            seq_cov = hit_query_coverage(hit)
-            if seq_method == 'whole':
-                seq_range = [hts[0][0], hts[-1][-1]]
-                seq_coverage = [seq_cov[0][0], seq_cov[-1][-1]]
-            elif seq_method == 'strict':
-                seq_range = [(i[0], i[-1]) for i in hts]
-                seq_coverage = [(s[0], s[-1]) for s in seq_cov]
-            else:
-                seq_range = ''
-                seq_coverage = ''
-            strands = flatten([bla.hit_strand_all for bla in hit.hsps])
-            if all(s > 0 for s in strands):
-                strand = '(+)'
-            elif all(s < 0 for s in strands):
-                strand = '(-)'
-            elif all(s == 0 for s in strands):
-                strand = '(0)'
-            else:
-                strand = '(N)'
-            seq_score = sum([hsp.score for hsp in hit.hsps])
-            if verbose > 2:
-                print("Adding hit {} to id list".format(seq_name + ':' + '-'.join([str(i) for i in seq_range[0:2]])),
-                      indent=indent)
-            id_list.append((seq_name, seq_range, strand, seq_score, seq_coverage))
-            if method == 'best hit':
-                print('Best Hit Reciprocal BLAST was selected, ending Reverse BLASTS after first annotation!',
-                      indent=indent)
-                break
-    else:
-        RecBlastWarning('No guarantees that this is going to work as of commit 81d3d36')
-        align_scorelist = []
-        truthple = []
-        subject_range = []
-        query_start_end = []
-        if verbose > 1:
-            print('Sorting through alignment\'s HSPs to get top scores of all alignments...', indent=indent)
-        for alignment in record.alignments:
-            subject_range_hsp = []
-            query_start_end_hsp = []
-            hsp_scorelist = []
-            if verbose > 3:
-                print('Number of HSPs: ', len(alignment.hsps), indent=indent+1)
-            for hsp in alignment.hsps:
-                hsp_scorelist.append(hsp.score)
-                subject_range_hsp.append(hsp.sbjct_start)
-                subject_range_hsp.append(hsp.sbjct_end)
-                query_start_end_hsp.append((hsp.query_start, hsp.query_end))
-            hsp_scorelist.sort(reverse=True)
-            query_start_end.append([i for i in merge_ranges(query_start_end_hsp)])
-            subject_range.append((subject_range_hsp[0], subject_range_hsp[-1]))
-            if verbose > 3:
-                print("HSP Score List:", indent=indent+1)
-                print(hsp_scorelist, indent=indent+2)
-            if hsp_cumu_score:
-                align_scorelist.append(sum(hsp_scorelist))
-            else:
-                align_scorelist.append(hsp_scorelist[0])
-        if verbose > 1:
-            print('Done with first-round sorting!', indent=indent)
-        if verbose > 3:
-            for align_index, alignment in enumerate(record.alignments):
-                print(alignment.title, indent=indent)
-                print("\tAlignment Score List:", indent=indent+1)
-                print(align_scorelist[align_index], indent=indent+2)
-                print("\tQuery_start_end:", indent=indent+1)
-                print(query_start_end[align_index], indent=indent+2)
-                print("\tSubject Range:", indent=indent+1)
-                print(subject_range[align_index], indent=indent+2)
-        if verbose > 1:
-            print('Sorting through alignments to get all hits above threshold...', indent=indent)
-
-        for align_index, alignment in enumerate(record.alignments):
-            score_threshold = (perc_score * align_scorelist[0])
-            length_alignment = sum([i[-1] - i[0] for i in query_start_end[align_index]])
-            align_len_threshold = record.query_length * perc_length
-            if hsp_cumu_score:
-                hsp_scoretotal = sum([hsp.score for hsp in alignment.hsps])
-                truthple.append((align_index, hsp_scoretotal >= score_threshold, hsp.expect <= expect,
-                                 length_alignment >= align_len_threshold, alignment.title))
-            else:
-                truthple.append((align_index, hsp.score >= score_threshold, hsp.expect <= expect,
-                                 length_alignment >= align_len_threshold, alignment.title))
-        if verbose > 3:
-            print('List of Alignments and Criteria Status:', indent=indent)
-            print('i\t', 'Score\t', 'Expect\t', 'Length\t', 'Alignment.Title', indent=indent)
-            for i in range(len(record.alignments)):
-                print("{0}\t{1}\t{2}\t{3}\t{4}".format(truthple[i][0], truthple[i][1], truthple[i][2],
-                      truthple[i][3], truthple[i][4]), indent=indent)
-        for i in truthple:
-            if i[1] and i[2] and i[3]:
-                id_list.append((record.alignments[i[0]].title,
-                                '[:{0}-{1}]'.format(subject_range[i[0]][0],
-                                                    subject_range[i[0]][1]),
-                                align_scorelist[i[0]]))
-                if verbose > 2:
-                    print("Alignment {} added to id_list!".format(i[4]), indent=indent)
-            else:
-                if verbose > 2:
-                    print("WARNING: ALIGNMENT {} FAILED TO MEET CRITERIA!".format(i[4]), indent=indent)
-                    if not i[1]:
-                        print('Score was below threshold!', indent=indent)
-                    if not i[2]:
-                        print('Expect was below threshold!', indent=indent)
-                    if not i[3]:
-                        print('Length was below threshold!', indent=indent)
-        sorted(id_list, reverse=True, key=itemgetter(2))
-    return id_list
+from RecBlast.Auxilliary import translate_annotation
 
 
 class RecBlastMPThread(multiprocessing.Process):
     """
-    RecBlast_MP_Thread_Handle is the first branch to be made. It will perform the actual RecBlast.
+    RecBlast_MP_Thread_Handle is the first branch to be made. It will perform the actual RecBlastRun.
     """
 
-    def __init__(self, proc_id, rb_queue, rb_results_queue, fw_search_db, infile_type, output_type, search_db_loc,
+    def __init__(self, proc_id, rb_queue, rb_results_queue, fw_search_db, infile_type, output_type, id_db_path,
                  query_species, fw_search_type, rv_search_type, fw_search_local, rv_search_local, rv_search_db, expect,
                  perc_score, perc_span, outfolder, indent, reciprocal_method, hit_name_only, translate_hit_name,
                  perc_ident, perc_length, megablast, email, id_type, id_source, id_db, fetch_batch_size, passwd,
@@ -331,7 +65,7 @@ class RecBlastMPThread(multiprocessing.Process):
         self.n_threads = n_threads
         self.fw_search_kwargs = fw_search_kwargs
         self.rv_search_kwargs = rv_search_kwargs
-        self.search_db_loc = search_db_loc
+        self.id_db_path = id_db_path
         self.write_intermediates = write_intermediates
         self.indent = indent
         self.reciprocal_method = reciprocal_method
@@ -349,7 +83,7 @@ class RecBlastMPThread(multiprocessing.Process):
                     self.rb_queue.task_done()
                     break
                 try:
-                    output = rb_instance(fw_search_db=self.fw_search_db, search_db_loc=self.search_db_loc,
+                    output = rb_instance(fw_search_db=self.fw_search_db, id_db_path=self.id_db_path,
                                          infile_type=self.infile_type, output_type=self.output_type,
                                          query_species=self.query_species,
                                          fw_search_type=self.fw_search_type, rv_search_type=self.rv_search_type,
@@ -381,7 +115,7 @@ class RecBlastMPThread(multiprocessing.Process):
         return
 
 
-class RecBlast(object):
+class RecBlastRun(object):
     def __init__(self, seq_record, target_species):
         self.starttime = datetime.now()
         self.seq_record = seq_record
@@ -389,7 +123,7 @@ class RecBlast(object):
         self.seq_record.id = self.seq_record.id.translate(transtab)
         self.target_species = target_species
 
-    def __call__(self, fw_search_db, infile_type, output_type, search_db_loc, reciprocal_method,
+    def __call__(self, fw_search_db, infile_type, output_type, id_db_path, reciprocal_method,
                  query_species, fw_search_type, rv_search_type, fw_search_local, rv_search_local, rv_search_db, expect,
                  perc_score, indent, hit_name_only, perc_span, translate_hit_name,
                  perc_ident, perc_length, megablast, email, id_type, id_source, id_db, fetch_batch_size, passwd,
@@ -462,7 +196,7 @@ class RecBlast(object):
                 FWSearch = Search(search_type=fw_search_type)
                 fwsearchrecord, search_err = FWSearch(seq_record=self.seq_record, species=target_species,
                                                       database=fw_search_db, filetype=infile_type,
-                                                      search_db_path=search_db_loc,
+                                                      search_db_path=id_db_path,
                                                       search_type=fw_search_type, local=fw_search_local,
                                                       expect=expect,
                                                       megablast=megablast, n_threads=n_threads,
@@ -513,13 +247,13 @@ class RecBlast(object):
             if isinstance(id_db, dict):
                 blat_2bit = id_db[target_species]
             elif id_db == 'auto':
-                blat_2bit = get_searchdb(search_type=fw_search_type, species=target_species, db_loc=search_db_loc,
+                blat_2bit = get_searchdb(search_type=fw_search_type, species=target_species, db_loc=id_db_path,
                                          verbose=verbose, indent=indent+1)
             elif isinstance(id_db, str):
                 blat_2bit = id_db
             else:
                 raise FileNotFoundError('Invalid 2bit file designation!')
-            id_db = Path(search_db_loc, blat_2bit+'.2bit').absolute()
+            id_db = Path(id_db_path, blat_2bit+'.2bit').absolute()
             id_db = str(id_db) if id_db.is_file() else None
             if id_db is None:
                 raise FileNotFoundError('Invalid 2bit file!')
@@ -629,7 +363,7 @@ class RecBlast(object):
                     RVSearch = Search(search_type=rv_search_type)
                     rvsearchrecord, search_err = RVSearch(seq_record=entry_record, species=query_species,
                                                           database=rv_search_db, filetype=infile_type,
-                                                          search_db_path=search_db_loc,
+                                                          search_db_path=id_db_path,
                                                           search_type=rv_search_type, local=rv_search_local,
                                                           expect=expect,
                                                           megablast=megablast, n_threads=n_threads,
@@ -715,7 +449,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
                  email='', run_name='default', output_loc='./RecBlast_output',
                  id_type='brute', id_source='sql', id_db='bioseqdb', fetch_batch_size=50,
                  passwd='', hit_name_only=False, min_mem=False,
-                 id_db_version='auto', search_db_loc='/usr/db/search_db_loc', indent=0, translate_hit_name=True,
+                 id_db_version='auto', id_db_path='/usr/db/id_db_path', indent=0, translate_hit_name=True,
                  verbose='v', max_n_processes='auto', n_threads=2, write_intermediates=False, write_final=True,
                  reciprocal_method='best hit', fw_search_kwargs=None, rv_search_kwargs=None):
     """
@@ -733,7 +467,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
                              megablast=True, email='', run_name='EHM_AvA',
                              id_type='brute', id_source='2bit', id_db='auto', fetch_batch_size=50,
                              passwd='', hit_name_only=True, min_mem=True,
-                             id_db_version='auto', search_db_loc='/usr/db/BLAT', indent=0,
+                             id_db_version='auto', id_db_path='/usr/db/BLAT', indent=0,
                              verbose='vvv', max_n_processes='auto', n_threads=2, write_intermediates=False,
                              write_final=True, reciprocal_method = 'best hit', fw_search_kwargs=None,
                              rv_search_kwargs=None)
@@ -767,7 +501,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
     :param hit_name_only:
     :param min_mem:
     :param id_db_version:
-    :param search_db_loc:
+    :param id_db_path:
     :param indent:
     :param verbose:
     :param max_n_processes:
@@ -919,16 +653,16 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
         else:
             print('Checking status of rv_server')
             rv_server_online = blat_server('auto', order='status', host=host, port=rv_search_db[query_species],
-                                           species=query_species, search_db_loc=search_db_loc, verbose=verbose,
+                                           species=query_species, id_db_path=id_db_path, verbose=verbose,
                                            indent=1, type=fw_search_type)
         if not rv_server_online and 'blat' in rv_search_type.lower():
             rv_search_db[query_species] = blat_server('auto', 'start', host=host, port=30000, species=query_species,
-                                                      search_db_loc=search_db_loc, verbose=verbose,
+                                                      id_db_path=id_db_path, verbose=verbose,
                                                       indent=1, type=rv_search_type)
             server_activated[query_species] = rv_search_db[query_species]
         elif not rv_server_online and 'tblat' in rv_search_type.lower():
             rv_search_db[query_species] = blat_server('auto', 'start', host=host, port=30000, species=query_species,
-                                                      search_db_loc=search_db_loc, verbose=verbose,
+                                                      id_db_path=id_db_path, verbose=verbose,
                                                       indent=1, type=rv_search_type)
             server_activated[query_species] = rv_search_db[query_species]
     if isinstance(fw_search_db, dict):
@@ -939,19 +673,19 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
                     fw_server_online = False
                 else:
                     fw_server_online = blat_server('auto', 'status', host=host, port=fw_search_db[species],
-                                                   species=species, search_db_loc=search_db_loc, verbose=verbose,
+                                                   species=species, id_db_path=id_db_path, verbose=verbose,
                                                    indent=1, type=fw_search_type)
                     print('Status of the forward server: ', fw_server_online)
                 if not fw_server_online and 'blat' in fw_search_type.lower():
                     print('Forward server was not online, starting!')
                     fw_search_db[species] = blat_server('auto', 'start', host=host, port=20000, species=species,
-                                                        search_db_loc=search_db_loc, verbose=verbose,
+                                                        id_db_path=id_db_path, verbose=verbose,
                                                         indent=1, type=fw_search_type)
                     server_activated[species] = fw_search_db[species]
                 elif not fw_server_online and 'tblat' in fw_search_type.lower():
                     print('Forward server was not online, starting!')
                     fw_search_db[species] = blat_server('auto', 'start', host=host, port=20000, species=species,
-                                                        search_db_loc=search_db_loc, verbose=verbose,
+                                                        id_db_path=id_db_path, verbose=verbose,
                                                         indent=1, type=fw_search_type)
                     server_activated[species] = fw_search_db[species]
             print(fw_search_db)
@@ -961,19 +695,19 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
                 fw_server_online = False
             else:
                 fw_server_online = blat_server('auto', 'status', host=host, port=fw_search_db[target_species],
-                                               species=target_species, search_db_loc=search_db_loc,
+                                               species=target_species, id_db_path=id_db_path,
                                                verbose=verbose, indent=1, type=fw_search_type)
                 print('Status of the forward server: ', fw_server_online)
             if not fw_server_online and 'blat' in fw_search_type.lower():
                 print('Forward server was not online, starting!')
                 fw_search_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
-                                                           species=target_species, search_db_loc=search_db_loc,
+                                                           species=target_species, id_db_path=id_db_path,
                                                            verbose=verbose, indent=1, type=fw_search_type)
                 server_activated[target_species] = fw_search_db[target_species]
             elif not fw_server_online and 'tblat' in fw_search_type.lower():
                 print('Forward server was not online, starting!')
                 fw_search_db[target_species] = blat_server('auto', 'start', host=host, port=20000,
-                                                           species=target_species, search_db_loc=search_db_loc,
+                                                           species=target_species, id_db_path=id_db_path,
                                                            verbose=verbose, indent=1, type=fw_search_type)
                 server_activated[target_species] = fw_search_db[target_species]
             print(fw_search_db)
@@ -983,7 +717,7 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
     if verbose >= 1:
         print('Creating RecBlast Threads... ')
     rec_blast_instances = [RecBlastMPThread(proc_id=str(i + 1), rb_queue=rb_queue, rb_results_queue=rb_results,
-                                            fw_search_db=fw_search_db, search_db_loc=search_db_loc,
+                                            fw_search_db=fw_search_db, id_db_path=id_db_path,
                                             infile_type=infile_type, output_type=output_type,
                                             query_species=query_species,
                                             fw_search_type=fw_search_type, rv_search_type=rv_search_type,
@@ -1013,16 +747,16 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
     # Load species list and add RecBlasts to queue
     if isinstance(target_species, list):
         for species in target_species:
-            # Initiate RecBlast Tasks
+            # Initiate RecBlastRun Tasks
             for rec in rec_handle:
                 if verbose > 2:
                     print('Sequence: ', rec.name)
-                rb_queue.put(RecBlast(seq_record=rec, target_species=species))
+                rb_queue.put(RecBlastRun(seq_record=rec, target_species=species))
     else:
         for rec in rec_handle:
             if verbose > 2:
                 print('Sequence: ', rec.name)
-            rb_queue.put(RecBlast(seq_record=rec, target_species=target_species))
+            rb_queue.put(RecBlastRun(seq_record=rec, target_species=target_species))
     #########################################################################
 
     # Drop poison pills in queue
@@ -1083,3 +817,150 @@ def recblast_run(seqfile, target_species, fw_search_db='auto', rv_search_db='aut
     progbar.done()
     return recblast_out
     #########################################################################
+
+
+class RecSearch(object):
+    def __init__(self, target_species, query_species, forward_search_type, reverse_search_type, verbose, **kwargs):
+        # GLOBAL OPTIONS
+        self.search_types = ("blast", "blat")
+        self.start_servers = False
+        self.max_processes = multiprocessing.cpu_count()/2
+        self.records = []
+        self.search_parameters = {"Forward": {}, "Reverse": {}}
+        # Other parameters
+        self.target_species = target_species
+        self.query_species = query_species
+        assert isinstance(target_species, list) or isinstance(target_species, str), "Target species must either be" \
+                                                                                    "a list of target species names, " \
+                                                                                    "or a single string indicating " \
+                                                                                    "the target species name"
+        self.verbose = verbose.lower().count('v') if isinstance(verbose, str) else verbose
+        assert isinstance(verbose, int), 'Verbose was of type {}; must be either be an integer greater ' \
+                                         'than or equal to zero, or a number of v\'s equal ' \
+                                         'to the desired level of verbosity'.format(type(verbose))
+        self.fw_search_type=forward_search_type
+        self.rv_search_type=reverse_search_type
+        assert any((search in self.fw_search_type for
+                    search in self.search_types)), "Forward search type {0} is invalid, currently supported" \
+                                                   "search types are: {1}.".format(self.fw_search_type,
+                                                                                   ', '.join(self.verbose))
+        assert any((search in self.rv_search_type for
+                    search in self.search_types)), "Reverse search type {0} is invalid, currently supported" \
+                                                   "search types are: {1}.".format(self.rv_search_type,
+                                                                                   ', '.join(self.verbose))
+        self.sequence_source = kwargs.pop("sequence_db", forward_search_type)
+
+    def queries(self, *queries, infile_type):
+        for query in queries:
+            if isinstance(query, list):
+                self.queries(*query)
+                continue
+            elif isinstance(query, str):
+                if query.startswith(">"):
+                    self.records += list(SeqIO.parse(StringIO(query), "fasta"))
+                else:
+                    self.queries(Path(query))
+                continue
+            elif isinstance(query, Path):
+                assert query.exists(), "Sequence File {} does not exist!".format(str(query))
+                assert query.is_file(), "Sequence File {} is not a file!".format(str(query))
+                self.records += [i for i in SeqIO.parse(str(query), infile_type)]
+                continue
+            else:
+                raise RecBlastException("Invalid Query type!")
+
+    def
+    def _calc_processes(self):
+        # Calculation of processes to run
+        if self.verbose > 1:
+            print('Automatically calculating n_processes:')
+        n_species = len(self.target_species) if isinstance(self.target_species, list) else 1
+        n_rec = len(self.records)
+        if n_rec < 1:
+            raise RecBlastException("No query records have been set! Please use self.queries() to set query records.")
+        n_jobs = n_rec * n_species
+        if n_jobs > self.max_processes:
+            self.n_processes = self.max_processes
+        else:
+            n_processes = n_jobs
+            if self.verbose:
+                print('Number of processes to be made: ', n_processes)
+
+
+    def _blat_server_check_(self, target, direction, search_type, search_db, host, id_db_path, indent):
+        assert isinstance(search_db, dict), "{0} search of type {1} must be a dictionary " \
+                                            "of species-port key pairs".format(direction, search_type)
+        server_activated = {}
+
+        if search_db[target] == 'auto':
+            rv_server_online = False
+        else:
+            rv_server_online = blat_server('auto', order='status', host=host, port=search_db[target],
+                                           species=target, id_db_path=id_db_path, verbose=self.verbose,
+                                           indent=1, type=search_type)
+        if rv_server_online:
+            return True
+        else:
+            print("BLAT server was offline!", indent=indent)
+            if self.start_servers:
+                print("Attempting to start server...", indent=indent)
+                try:
+                    search_db[target] = blat_server('auto', 'start', host=host, port=30000, species=target,
+                                                    id_db_path=id_db_path, verbose=self.verbose,
+                                                    indent=1, type=search_type)
+                    return True
+                except TimeoutError as err:
+                    print("{0}: BLAT server start-up function timed out while starting server. "
+                          "Full error message: \n".format(type(err)))
+                    return False
+                except BLATServerError as err:
+                    print("{0}: BLAT server start-up failed! Full error message: \n".format(type(err)))
+                    return False
+                except Exception:
+                    raise
+            else:
+                return False
+
+    def __call__(self):
+        assert len(self.records) > 0, "No query records have been set! Please use self.queries() to set query records."
+        if self.verbose:
+            print('RecBlast version: ', __version__)
+            print('Using BioPython version: ', bp_version)
+            print('Beginning RecBlastMP!')
+        if self.verbose == 1:
+            print('Basic verbose mode active. Will print only essential commentary.')
+        elif self.verbose == 2:
+            print('Verbose mode was set to 2. Will elaborate considerably about the script.')
+        elif self.verbose == 3:
+            print(
+                'Debugging-level verbose mode set. You will be innunadated by text. '
+                'Brace yourself, and hold on to your console.')
+        elif self.verbose == 50:
+            print("V FOR VERBOSE: \n"
+                  "\"Voilà! In view, a humble vaudevillian veteran cast vicariously as both victim and villain by \n"
+                  "the vicissitudes of Fate. This visage, no mere veneer of vanity, is a vestige of the vox populi, \n"
+                  "now vacant, vanished. However, this valourous visitation of a bygone vexation stands vivified and \n"
+                  "has vowed to vanquish these venal and virulent vermin vanguarding vice and vouchsafing the \n"
+                  "violently vicious and voracious violation of volition! The only verdict is vengeance; a vendetta \n"
+                  "held as a votive, not in vain, for the value and veracity of such shall one day vindicate the \n"
+                  "vigilant and the virtuous. \n"
+                  "Verily, this vichyssoise of verbiage veers most verbose, so let me simply add that it's my very \n"
+                  "good honour to meet you and you may call me [Reciprocal-Best-Hit-BLAST Script].\" \n"
+                  "\t - V \n"
+                  "Moore, Alan, David Lloyd, Steve Whitaker, and Siobhan Dodds. V for Vendetta. New York: DC Comics, "
+                  "2005.")
+        if self.verbose > 3:
+            multiprocessing.log_to_stderr(logging.DEBUG)
+
+        # Converting perc_ident to integer because that's how these programs roll
+        perc_ident = perc_ident * 100
+        #########################################################################
+        # Multiprocessing set-up
+        self._calc_processes()
+        if self.verbose > 1:
+            print('Creating queues... ', end='')
+        rb_queue = multiprocessing.JoinableQueue()
+        rb_results = multiprocessing.Queue()
+        if self.verbose > 1:
+            print('Done!')
+        #########################################################################

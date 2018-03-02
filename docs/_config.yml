@@ -1,6 +1,6 @@
 theme: jekyll-theme-slate
 layout: default
-title: RecBlast
+title: RecBlastRun
 description: A Python module containing functions to perform Reciprocal-Best-Hit BLAST searches between species.
 show_downloads: true
 google_analytics: UA-93059474-1

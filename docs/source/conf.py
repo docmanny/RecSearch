@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# RecBlast documentation build configuration file, created by
+# RecBlastRun documentation build configuration file, created by
 # sphinx-quickstart on Mon Jun 19 10:33:12 2017.
 #
 # This file is execfile()d with the current directory set to its
@@ -49,7 +49,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = 'RecBlast'
+project = 'RecBlastRun'
 copyright = '2017, Juan Manuel Vazquez (docmanny)'
 author = 'Juan Manuel Vazquez (docmanny)'
 
@@ -130,7 +130,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'RecBlast.tex', 'RecBlast Documentation',
+    (master_doc, 'RecBlastRun.tex', 'RecBlastRun Documentation',
      'Juan Manuel Vazquez (docmanny)', 'manual'),
 ]
 
@@ -140,7 +140,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'recblast', 'RecBlast Documentation',
+    (master_doc, 'recblast', 'RecBlastRun Documentation',
      [author], 1)
 ]
 
@@ -151,8 +151,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'RecBlast', 'RecBlast Documentation',
-     author, 'RecBlast', 'One line description of project.',
+    (master_doc, 'RecBlastRun', 'RecBlastRun Documentation',
+     author, 'RecBlastRun', 'One line description of project.',
      'Miscellaneous'),
 ]
 

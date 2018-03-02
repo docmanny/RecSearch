@@ -1,15 +1,15 @@
-<h1 id="recblast">RecBlast</h1>
+<h1 id="recblast">RecBlastRun</h1>
 <p><a href="https://zenodo.org/badge/latestdoi/82135779"><img src="https://zenodo.org/badge/82135779.svg" alt="DOI" /></a>
 Recblast is a module containing functions that can do Reciprocal-Best-Hit-BLAST
 for a given list of sequences between a query species, and a list of target species.
-Unlike other implementations of Reciprocal-Best-Hit-BLAST, RecBlast is designed to
+Unlike other implementations of Reciprocal-Best-Hit-BLAST, RecBlastRun is designed to
 be flexible in its functionality. Rather than simply identifying a lone reciprocal
-best-hit, RecBlast compiles all hits above a set of given criteria in order of
+best-hit, RecBlastRun compiles all hits above a set of given criteria in order of
 descending scores, and then annotates them with a list of reciprocal BLAST hits
 that were compiled and sorted in the same fashion.</p>
 
-<p>Additionally, RecBlast is designed to be flexible in how it goes about performing
-the searches; in its final form, RecBlast will be able to not only use BLAST,
+<p>Additionally, RecBlastRun is designed to be flexible in how it goes about performing
+the searches; in its final form, RecBlastRun will be able to not only use BLAST,
 but will also be able to use BLAT and other custom programs, either locally or
 on remote servers.</p>
 
@@ -37,8 +37,8 @@ species and any number of target species;</li>
 <h3 id="how-it-works"><strong><em>How it works:</em></strong></h3>
 <hr />
 
-<p>The script begins by initializing various RecBlast processes, one for each
-RecBlast to be run, up to a mutable maximum limit. Once initialized, each RecBlast
+<p>The script begins by initializing various RecBlastRun processes, one for each
+RecBlastRun to be run, up to a mutable maximum limit. Once initialized, each RecBlastRun
 process will then do the following:</p>
 
 <ol>
