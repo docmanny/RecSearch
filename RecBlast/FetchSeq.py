@@ -10,6 +10,7 @@ from Bio import SeqIO, SeqFeature
 from RecBlast.Search import id_search
 from inspect import isgenerator
 from RecBlast import print
+from RecBlast.Search import get_searchdb
 from RecBlast.WarningsExceptions import *
 
 
@@ -44,18 +45,18 @@ def format_range(seqrange, strand, addlength, indent, verbose):
     return newrange, strand
 
 
-def biosql_get_sub_db_names(passwd, db="bioseqdb", driver="psycopg2", user="postgres", host="localhost"):
+def biosql_get_sub_db_names(passwd, database="bioseqdb", driver="psycopg2", user="postgres", host="localhost"):
     """A convenience wrapper for getting all the sub-database names in a BioSQL-formatted database.
 
     :param str passwd: The password for the database.
-    :param str db: The name of the database.
+    :param str database: The name of the database.
     :param str driver: The driver BioSQL will use to access the database.
     :param str user: The username used to access the database.
     :param str host: The host of the database.
     :return: a list of sub-database names.
     """
     from BioSQL import BioSeqDatabase
-    server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
+    server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, database=database)
     sub_db_name_list = [i for i in server.keys()]
     return sub_db_name_list
 
@@ -184,11 +185,11 @@ def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, indent=0
 
 
 class GetSeqMP(multiprocessing.Process):
-    def __init__(self, task_queue, result_queue, db, host, driver, user, passwd, sub_db_name, verbose, server=None):
+    def __init__(self, task_queue, result_queue, database, host, driver, user, passwd, sub_db_name, verbose, server=None):
         multiprocessing.Process.__init__(self)
         self.task_queue = task_queue
         self.result_queue = result_queue
-        self.db = db
+        self.database = database
         self.host = host
         self.driver = driver
         self.user = user
@@ -197,7 +198,7 @@ class GetSeqMP(multiprocessing.Process):
         self.verbose = verbose
         if server is None:
             self.server = BioSeqDatabase.open_database(driver=self.driver, user=self.user, passwd=self.password,
-                                                       host=self.host, db=self.db)
+                                                       host=self.host, database=self.database)
         else:
             self.server = server
 
@@ -241,7 +242,7 @@ class BioSeqLookupCascade(object):
 
 
 def biosql_get_record(id_list, sub_db_name, passwd='', id_type='accession', driver="psycopg2", indent=0,
-                      user="postgres", host="localhost", db="bioseqdb", num_proc=2, verbose=True, server=None):
+                      user="postgres", host="localhost", database="bioseqdb", num_proc=2, verbose=True, server=None):
     """
 
     :param sub_db_name:
@@ -252,7 +253,7 @@ def biosql_get_record(id_list, sub_db_name, passwd='', id_type='accession', driv
     :param indent:
     :param user:
     :param host:
-    :param db:
+    :param database:
     :param num_proc:
     :param verbose:
     :param server:
@@ -261,7 +262,7 @@ def biosql_get_record(id_list, sub_db_name, passwd='', id_type='accession', driv
         biosql_get_record(sub_db_name='MyoLuc2.0', passwd='',
                              id_list=['NW_005871148', 'NW_005871300', 'NW_005871148'], id_type='accession',
                              driver="psycopg2", user="postgres",
-                             host="localhost", db="bioseqdb", verbose=True)
+                             host="localhost", database="bioseqdb", verbose=True)
     """
     idents = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
@@ -272,7 +273,7 @@ def biosql_get_record(id_list, sub_db_name, passwd='', id_type='accession', driv
     id_list = id_list if isinstance(id_list, list) else [id_list]
     num_jobs = len(id_list)
     seqdict = dict()
-    getseqs = [GetSeqMP(idents, results, db=db, host=host, driver=driver, user=user, passwd=passwd,
+    getseqs = [GetSeqMP(idents, results, database=database, host=host, driver=driver, user=user, passwd=passwd,
                         sub_db_name=sub_db_name, verbose=verbose, server=server) for _ in range(num_proc)]
     for gs in getseqs:
         gs.start()
@@ -302,8 +303,9 @@ def biosql_get_record(id_list, sub_db_name, passwd='', id_type='accession', driv
 
 
 class FetchSeqMP(multiprocessing.Process):
-    def __init__(self, id_queue, seq_out_queue, delim, id_type, server, species, source, db, add_length, indent,
-                 host, driver, version, user, passwd, email, output_type, batch_size, verbose, n_subthreads):
+    def __init__(self, id_queue, seq_out_queue, delim, id_type, server, species, source, database, database_path,
+                 add_length, indent, host, driver, version, user, passwd, email, output_type, batch_size, verbose,
+                 n_subthreads):
         multiprocessing.Process.__init__(self)
         # Queues
         self.id_queue = id_queue
@@ -315,7 +317,8 @@ class FetchSeqMP(multiprocessing.Process):
         self.server = server  # Declaring the server here lets me pass it on to everything else by inheritance
         self.species = species
         self.source = source
-        self.db = db
+        self.database = database
+        self.database_path = database_path
         self.add_length = add_length
         # SQL items
         self.host = host
@@ -341,7 +344,8 @@ class FetchSeqMP(multiprocessing.Process):
                 break
             try:
                 id_item, seq, miss_items = fs_instance(passwd=self.passwd, id_type=self.id_type, driver=self.driver,
-                                                       user=self.user, host=self.host, db=self.db, delim=self.delim,
+                                                       user=self.user, host=self.host, database=self.database,
+                                                       database_path=self.database_path, delim=self.delim,
                                                        server=self.server, version=self.version,
                                                        add_length=self.add_length,
                                                        species=self.species, source=self.source, verbose=self.verbose,
@@ -362,12 +366,24 @@ class FetchSeq(object):  # The meat of the script
                                                                                                        type(id_rec))
         self.id_rec = id_rec
 
-    def __call__(self, delim, species, version, source, passwd, id_type, driver, user, host, db, n_threads, server,
-                 verbose, add_length, indent):
+    def __call__(self, delim, species, version, source, passwd, id_type, driver, user, host, database, n_threads,
+                 server, verbose, add_length, indent, database_path=None):
+        if isinstance(database, dict):
+            if species in database:
+                database = database[species]
+            else:
+                raise DatabaseNotFoundError('No sequence source database for species {} '
+                                            'was found in the provided dict!'.format(species))
+        elif database == "auto" and source in ["2bit", "twobit", "blastdb"]:
+            database = get_searchdb(search_type=source, species=species, db_loc=database_path,
+                                    verbose=verbose, indent=indent + 1).name
+        if database_path:
+            database = database_path.rstrip("/") + '/' + database
         if verbose > 1:
             print('Full header for Entry:', indent=indent)
             print(self.id_rec, indent=indent)
-        id_item, seq_range, strand, score, query_coverage = self.id_rec
+        item_chr, seq_range, item_name, score, strand, query_coverage = self.id_rec
+
         try:
             if verbose > 1:
                 print('Seq range: ', seq_range, indent=indent)
@@ -377,31 +393,31 @@ class FetchSeq(object):  # The meat of the script
                 seq_range, strand = format_range(seqrange=seq_range, strand=strand, addlength=add_length,
                                                  indent=indent + 1, verbose=verbose)
             if -1 in seq_range[0:2]:
-                id_full = '{0}'.format(id_item)
+                id_full = '{0}'.format(item_chr)
             else:
-                id_full = '{0}:{1}-{2}'.format(id_item, seq_range[0], seq_range[1])
+                id_full = '{0}:{1}-{2}'.format(item_chr, seq_range[0], seq_range[1])
         except KeyError:
-            raise KeyError('Sequence {0} lacks a seq_range entry!!!'.format(id_item))
+            raise KeyError('Sequence {0} lacks a seq_range entry!!!'.format(item_chr))
         if verbose:
             print('ID for query:\t', id_full, indent=indent)
 
         # Armed with the ID list, we fetch the sequences from the appropriate source
 
         if source.lower() == "entrez":
-            seq, itemnotfound = self.entrez(id_item, seq_range, indent, add_length, verbose)
+            seq, itemnotfound = self.entrez(item_chr, seq_range, indent, add_length, verbose)
         elif source.lower() in ["postgresql", "mysql"]:
-            seq, itemnotfound = self.sql(id_item=id_item, seq_range=seq_range, source=source, species=species,
-                                         id_type=id_type, user=user, host=host, passwd=passwd, db=db,
+            seq, itemnotfound = self.sql(id_item=item_chr, seq_range=seq_range, source=source, species=species,
+                                         id_type=id_type, user=user, host=host, passwd=passwd, database=database,
                                          n_threads=n_threads, version=version, server=server,
                                          indent=indent, verbose=verbose)
         elif source == "fasta":  # Note: anecdotally, this doesn't run terribly fast - try to avoid.
-            seq, itemnotfound = self.fasta(id_item=id_item, seq_range=seq_range, db=db, source=source,
+            seq, itemnotfound = self.fasta(id_item=item_chr, seq_range=seq_range, database=database, source=source,
                                            indent=indent, verbose=verbose)
-        elif source == "2bit":
-            seq, itemnotfound = self.twobit(id_full=id_full, id_item=id_item, db=db,
+        elif source in ["2bit", "twobit"]:
+            seq, itemnotfound = self.twobit(id_full=id_full, id_item=item_chr, database=database,
                                             indent=indent, verbose=verbose)
         else:
-            raise DatabaseError('Not a valid database source: {}'.format(source))
+            raise DatabaseNotFoundError('Not a valid database source: {}'.format(source))
         if itemnotfound is not None:
             if verbose > 1:
                 print('Some items were not found:', indent=indent)
@@ -422,17 +438,17 @@ class FetchSeq(object):  # The meat of the script
         seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]), int(seq_range[1]), strand=s)
         seq.features[0].qualifiers['score'] = score
         seq.features[0].qualifiers['query_coverage'] = query_coverage
-        seq.name = id_item
-        return id_item, seq, itemnotfound
+        seq.name = item_chr
+        return item_chr, seq, itemnotfound
 
     @staticmethod
     def entrez(id_item, seq_range, indent, add_length, verbose):
         raise SearchEngineNotImplementedError('Search type "entrez" is not yet implemented, sorry!!!')
 
     @staticmethod
-    def fasta(id_item, seq_range, db, source, indent, verbose):
+    def fasta(id_item, seq_range, database, source, indent, verbose):
         regex = id_search(id_item, indent=indent, verbose=verbose, regex_only=True)
-        seqdict = SeqIO.index(db, source,
+        seqdict = SeqIO.index(database, source,
                               key_function=lambda identifier: regex.search(identifier).groups()[0])
         itemnotfound = id_item if id_item not in seqdict.keys() else None
         seq = seqdict[id_item]
@@ -440,11 +456,11 @@ class FetchSeq(object):  # The meat of the script
         return seq, itemnotfound
 
     @staticmethod
-    def sql(id_item, seq_range, source, species, id_type, user, host, passwd, db,
+    def sql(id_item, seq_range, source, species, id_type, user, host, passwd, database,
             n_threads, version, server, indent, verbose):
         driver = "mysql" if source.lower() == 'mysql' else "psycopg2"
         if verbose > 1:
-            print('Searching for sequences in local SQL db...', indent=indent)
+            print('Searching for sequences in local SQL database...', indent=indent)
         if verbose > 2:
             print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
         if version.lower() == 'auto':
@@ -472,7 +488,7 @@ class FetchSeq(object):  # The meat of the script
             seq_dict, itemnotfound = biosql_get_record(sub_db_name=sub_db_name, passwd=passwd,
                                                        id_list=id_list_search,
                                                        id_type=id_type, driver=driver, user=user,
-                                                       host=host, db=db, num_proc=n_threads, server=server,
+                                                       host=host, database=database, num_proc=n_threads, server=server,
                                                        verbose=True)
         except Exception as err:
             print('Please note the sub_databases of server:\n\t', [str(i) for i in server.keys()], indent=indent)
@@ -484,11 +500,11 @@ class FetchSeq(object):  # The meat of the script
         return seq, itemnotfound
 
     @staticmethod
-    def twobit(id_full, id_item, db, indent, verbose):
+    def twobit(id_full, id_item, database, indent, verbose):
         seq = None
         itemsnotfound = None
 
-        command = ["twoBitToFa", '{0}:{1}'.format(db, id_full), '/dev/stdout']
+        command = ["twoBitToFa", '{0}:{1}'.format(database, id_full), '/dev/stdout']
         if verbose > 1:
             print('Command:', indent=indent)
             print(' '.join(command), indent=indent + 1)
@@ -513,8 +529,9 @@ class FetchSeq(object):  # The meat of the script
 
 
 def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='brute', server=None, source="SQL",
-             db="bioseqdb", host='localhost', driver='psycopg2', version='1.0', user='postgres', passwd='', email='',
-             batch_size=50, output_type="fasta", verbose=1, n_threads=1, n_subthreads=1, add_length=(0, 0), indent=0):
+             database="bioseqdb", database_path=None, host='localhost', driver='psycopg2', version='1.0',
+             user='postgres', passwd='', email='', batch_size=50, output_type="fasta", verbose=1, n_threads=1,
+             n_subthreads=1, add_length=(0, 0), indent=0):
     if isgenerator(ids):
         if verbose > 1:
             print('Received generator!', indent=indent)
@@ -532,7 +549,11 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
             if verbose:
                 print('id_prelist is empty!', indent=indent)
             return 'None'
-
+    for id_item in ids:
+        assert len(id_item) == 6, "Item {0} in id_list has {1} items, not 5" \
+                                  "!".format(" ".join((" ".join(item) if not isinstance(item, str) else item 
+                                                      for item in id_item)),
+                                            len(id_item))
     if verbose > 1:
         print('Readied ids!', indent=indent)
 
@@ -544,7 +565,8 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
             try:
                 if verbose > 1:
                     print('No server received, opening server...', indent=indent)
-                server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host, db=db)
+                server = BioSeqDatabase.open_database(driver=driver, user=user, passwd=passwd, host=host,
+                                                      database=database)
                 if verbose > 1:
                     print('Done!', indent=indent)
             except Exception as err:
@@ -565,7 +587,8 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
     if verbose > 1:
         print('Creating FecSeq Processes...', indent=indent)
     fs_instances = [FetchSeqMP(id_queue=id_list, seq_out_queue=results,
-                               delim=delim, id_type=id_type, server=server, species=species, source=source, db=db,
+                               delim=delim, id_type=id_type, server=server, species=species, source=source,
+                               database=database, database_path= database_path,
                                host=host, driver=driver, version=version, user=user, passwd=passwd, email=email,
                                output_type=output_type, batch_size=batch_size, verbose=verbose,
                                n_subthreads=n_subthreads, add_length=add_length, indent=indent + 1)
@@ -608,3 +631,20 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
         return
     else:
         return output_dict, missing_items_list
+
+
+def seq_from_exon(query_record, forward_search_criteria):
+    # TODO: filter sequences as in Search.id_ranker()
+    from functools import reduce
+    query_seq = []
+    for hsp in query_record:
+        hsp_frags = [hsp_frag.hit for hsp_frag in hsp]
+        for hit, hsp_frag in zip(hsp_frags, hsp):
+            hit.features[0] = SeqFeature.SeqFeature(SeqFeature.FeatureLocation(*hsp_frag.hit_range),
+                                                    strand=hsp_frag.hit_strand)
+        query_seq.append(hsp_frags)
+    query_seq = [sorted(hsp,
+                        key=lambda x: x.features[0].location.start,
+                        reverse=all((hsp_fragment.features[0].location.strand == -1 for hsp_fragment in hsp)))
+                 for hsp in query_seq]
+    query_seq_joint = [reduce(lambda x, y: x + y, hsp) for hsp in query_seq]
