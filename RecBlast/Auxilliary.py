@@ -654,6 +654,8 @@ def read_bed(bedfile, key_col = 3):
     assert bedfile.is_file(), "Given bedfile path was not a file! Did you provide a directory?"
     with bedfile.open() as bed:
         for line in bed:
+            if line.startswith("#"):
+                continue
             items = line.strip().split('\t')
             for i, j in enumerate(items):
                 try:
