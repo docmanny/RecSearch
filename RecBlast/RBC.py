@@ -237,7 +237,7 @@ class RecBlastContainer(dict):
                                                                           self[species][query]['recblast_results']))
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
-    def write(self, file_loc=None, filetype='fasta', **kwargs):
+    def write(self, file_loc=None, filetype='fasta', verbose = 1, **kwargs):
         if filetype is None:
             return 0
         if file_loc is None:
@@ -254,31 +254,35 @@ class RecBlastContainer(dict):
         else:
             raise TypeError('file_loc was of type {}, must be either a string or a Path object!'.format(file_loc))
         if self == dict():
-            print('rc_container is empty!')
+            if verbose:
+                print('rc_container is empty!')
             return 0
         else:
             if filetype.lower() in 'sqlite3':
                 tbn = kwargs.pop('table_name', 'RecBlastOutput')
                 odb = kwargs.pop('outdb', None)
-                nwrite = self._write_sqlite(outdb=odb, sqlfile=file_loc, table_name=tbn, **kwargs)
+                nwrite = self._write_sqlite(outdb=odb, sqlfile=file_loc, table_name=tbn, verbose=verbose, **kwargs)
             elif 'bed' in filetype.lower():
                 col = kwargs.pop('col', 12)
                 custom = kwargs.pop('custom', None)
                 filename = kwargs.pop('filename', 'RecBlastOutput.bed').replace(' ', '_')
                 filename += '' if filename.endswith('.bed') else '.bed'
                 if filetype.lower() == 'bed-min':
-                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=4, custom=custom)
+                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=4, custom=custom,
+                                             verbose=verbose)
                 elif filetype.lower() == 'bed-complete':
-                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom='complete')
+                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom='complete',
+                                             verbose=verbose)
                 else:
-                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom=custom)
+                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom=custom,
+                                             verbose=verbose)
             elif filetype.lower() in 'gff3':
-                nwrite = self._write_gff3(file_loc=file_loc, **kwargs)
+                nwrite = self._write_gff3(file_loc=file_loc, verbose = verbose, **kwargs)
             else:
-                nwrite = self._write_files(file_loc=file_loc, filetype=filetype, **kwargs)
+                nwrite = self._write_files(file_loc=file_loc, filetype=filetype, verbose = verbose, **kwargs)
         return nwrite
 
-    def _write_bed(self, file_loc, filename, custom, col):
+    def _write_bed(self, file_loc, filename, custom, col, verbose):
         nwrite = 0
         for species in self.keys():
             bed = []
@@ -287,7 +291,8 @@ class RecBlastContainer(dict):
                 recblast_output.parent.mkdir(parents=True)
             except FileExistsError:
                 pass
-            print('Output Location for bed file of {0}:\t{1}'.format(species, str(recblast_output)))
+            if verbose:
+                print('Output Location for bed file of {0}:\t{1}'.format(species, str(recblast_output)))
             for query, record in self[species].items():
                 if not record['recblast_results']:
                     continue
@@ -296,6 +301,11 @@ class RecBlastContainer(dict):
                         feat = hit.features[0]
                     except IndexError:
                         feat = SeqFeature.SeqFeature()
+                    except AttributeError:
+                        print(type(hit))
+                        print(hit.__dict__)
+                        print(hit)
+                        raise
                     try:
                         loc = feat.location
                         try:
@@ -377,7 +387,7 @@ class RecBlastContainer(dict):
                 rc_out.writelines(bed)
         return nwrite
 
-    def _write_sqlite(self, outdb, sqlfile, table_name, **kwargs):
+    def _write_sqlite(self, outdb, sqlfile, table_name, verbose, **kwargs):
         nwrite = 0
         max_hit_col = kwargs.pop('max_hit_col', 1)
         # col_to_make = kwargs.pop('col_to_make', 0)
@@ -402,7 +412,8 @@ class RecBlastContainer(dict):
                 qr = rc['query_record'].format('fasta')
                 hits = rc['recblast_results']
                 if hits == list():
-                    print('No RecBlast hits in species {0} for sequence {1}!'.format(spc, rc['query_record'].id))
+                    if verbose:
+                        print('No RecBlast hits in species {0} for sequence {1}!'.format(spc, rc['query_record'].id))
                     continue
                 else:
                     try:
@@ -451,7 +462,7 @@ class RecBlastContainer(dict):
         outdb.close()
         return nwrite
 
-    def _write_gff3(self, file_loc, **kwargs):
+    def _write_gff3(self, file_loc, verbose, **kwargs):
         # Example row
         # seqid\tRecBlast\tduplicated_pseudogene,supported_by_sequence_similarity\tstart\tend\t0\t+\t0\t
         nwrite = 0
@@ -459,7 +470,7 @@ class RecBlastContainer(dict):
 
         raise NotImplementedError('RBC write_gff3 method has not yet been implemented!')
 
-    def _write_files(self, file_loc, filetype, **kwargs):
+    def _write_files(self, file_loc, filetype, verbose, **kwargs):
         """
 
         :param file_loc:
@@ -474,13 +485,14 @@ class RecBlastContainer(dict):
                 rc_local = self[spc][target]
                 recblast_sequence = rc_local['recblast_results']
                 if recblast_sequence == list():
-                    print('No RecBlast hits in species {0} for sequence {1}!'.format(spc,
-                                                                                     rc_local[
-                                                                                         'query_record'].id))
+                    if verbose:
+                        print('No RecBlast hits in species {0} for sequence {1}!'.format(spc,
+                                                                                         rc_local['query_record'].id))
                     continue
                 else:
                     recblast_output = file_loc.joinpath(rc_local['output_paths']['recblast_output'])
-                    print('Output Location:\t', str(recblast_output))
+                    if verbose:
+                        print('Output Location:\t', str(recblast_output))
                     try:
                         recblast_output.parent.mkdir(parents=True)
                     except FileExistsError:
