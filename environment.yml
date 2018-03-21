@@ -1,0 +1,9 @@
+name: RecSearch
+channels:
+dependencies:
+  - dill>=0.2.6
+  - multiprocess
+  - pytest-mock
+  - mygene
+  - pip:
+     - "--editable=git+https://github.com/biopython/biopython.git#egg=biopython"
