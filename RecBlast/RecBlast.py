@@ -501,8 +501,33 @@ class RecBlastRun(object):
 
 
 class RecSearch(object):
+    """Performs a Reciprocal Search of sequences between a list of target species and a query species.
+
+    The RecSearch object can be used to initiate and run various separate reciprocal searches. The
+
+    Usage:
+    >>> recblast = RecSearch(target_species="Species A", query_species="Homo sapiens",
+    ...                      forward_search_type="tblat", reverse_search_type="blat-transcript",
+    ...                      sequence_source="twobit", verbose=0)
+    >>> recblast.set_queries("./Test/query/3protein.fasta", infile_type="fasta")
+    >>> recblast.forward_search_settings['database'] = {"Loxodonta africana": "loxAfr3.2bit"}
+    >>> recblast.sequence_source_settings['database'] = {"Loxodonta africana": "loxAfr3.2bit"}
+    >>> recblast.forward_search_settings['database_port'] = {"Loxodonta africana":20008}
+    >>> recblast.reverse_search_settings['database_port'] = {"Homo sapiens":20005}
+    >>> rc = recblast("test", output_type=None, stop="forward_id_ranker")
+
+    """
     def __init__(self, target_species, query_species, forward_search_type, reverse_search_type, sequence_source,
                  verbose):
+        """
+
+        :param target_species:
+        :param query_species:
+        :param forward_search_type:
+        :param reverse_search_type:
+        :param sequence_source:
+        :param verbose:
+        """
         # GLOBAL OPTIONS
         self.search_types = (
             'blastn',
@@ -955,3 +980,57 @@ class RecSearch(object):
             progbar.done()
         return recblast_out
         #########################################################################
+
+    def __repr__(self):
+        return ('RecSearch(target_species={0}, query_species={1}, '
+                'forward_search_type={2}, reverse_search_type={3}, '
+                'sequence_source={4}, n_records={5} verbose={6})'.format(self.target_species, self.query_species, 
+                                                                         self.forward_search_type, 
+                                                                         self.reverse_search_type, self.sequence_source,
+                                                                         len(self.records), self.verbose)
+                )
+    def __str__(self):
+        s = "RecSearch Version {version}\n" \
+            "Query Species:\n" \
+            "\t{query_species}\n" \
+            "Target Species:\n" \
+            "\t{target_species}\n" \
+            "Queries:\n" \
+            "\t{queries}\n" \
+            "Forward Search Type: {f_search_type}\n" \
+            "\t Parameters:\n" \
+            "\t\t{f_search_param}\n" \
+            "\t Criteria:\n" \
+            "\t\t{f_search_crit}\n" \
+            "Reverse Search Type: {r_search_type}\n" \
+            "\t Parameters:\n" \
+            "\t\t{r_search_param}\n" \
+            "\t Criteria:\n" \
+            "\t\t{r_search_crit}\n" \
+            "Sequence Database: {seq_db}\n" \
+            "\t{seq_set}" \
+            "".format(version=__version__,
+                      query_species=self.query_species,
+                      target_species="\n\t".join(self.target_species),
+                      queries="\n\t".join(("{0} ({1})".format(i.name, len(i)) for i in self.records)),
+                      f_search_type=self.forward_search_type,
+                      f_search_param="\n\t\t".join(
+                          ("{0}: {1}".format(k, v) for k, v in self.forward_search_settings.items())
+                      ),
+                      f_search_crit="\n\t\t".join(
+                          ("{0}: {1}".format(k, v) for k, v in self.forward_search_criteria.items())
+                      ),
+                      r_search_type=self.reverse_search_type,
+                      r_search_param="\n\t\t".join(
+                          ("{0}: {1}".format(k, v) for k, v in self.reverse_search_settings.items())
+                      ),
+                      r_search_crit="\n\t\t".join(
+                          ("{0}: {1}".format(k, v) for k, v in self.reverse_search_criteria.items())
+                      ),
+                      seq_db=self.sequence_source,
+                      seq_set="\n\t".join(
+                          ("{0}: {1}".format(k, v) for k, v in self.sequence_source_settings.items())
+                      )
+                      )
+        return s
+        
