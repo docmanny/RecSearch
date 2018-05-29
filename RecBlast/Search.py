@@ -233,7 +233,7 @@ class Search(object):
             except ValueError:
                 if verbose:
                     print('No Query Results were found in handle for seq_record {}!'.format(seq_record.id))
-                    raise ValueError
+                raise NoHitsError('No Query Results were found in handle for seq_record {}!'.format(seq_record.id))
             except Exception as err:
                 print('Error reading BLAT results! Aborting!')
                 print('Error details:\n')
@@ -321,7 +321,7 @@ def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex=None, r
     assembly2 = 'KN678312.1	[:9787-29116](+)	478'
     symbol = 'TP53'
     symbol = 'INS [:259-568](+) (161)'
-    strand = '(+)'
+    strand = '+'
 
     :param id_rec:
     :param id_type:
@@ -683,267 +683,157 @@ def blat_server(twobit, order='start', host='localhost', port=20000, type='blat'
             raise TimeoutError('Timed out!')
 
 
-def id_ranker(record, perc_score, perc_length, perc_ident, expect=None, perc_span=0.1, min_n_hsps=1, hsp_cumu_score=True,
-              seq_method='whole', indent=0, verbose=1, method='all', samestrand=True):
+def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_cumu_score=True,
+              seq_method='whole', indent=0, verbose=1, same_strand=True, return_only=None):
     """Filters results based on score, expectation value, length, percent identity, and span; returns a sorted list.
 
     :param query_record record: Either a SearchIO.QueryResult or a Bio.Blast.Record.
     :param float perc_score: Minimum percentage of top score for a hit.
     :param float expect: Maximum e-value for a hit (BLAST-only).
-    :param float perc_length: Minimum percent of the longest hit by query coverage for a hit.
+    :param float perc_query_span: Minimum percent of the longest hit by query coverage for a hit.
     :param int perc_ident: Minimum percent identity of a hit.
-    :param float perc_span: Minimum percentage of the longest length-span of an HSP within a hit.
-    :param int min_hsps: Minimum number of hsps needed per hit.
     :param bool hsp_cumu_score: Use cumulative HSP scores rather than individual scores. (LEAVE AS DEFAULT)
     :param str seq_method: How should id_ranker compile the sequence ranges? [Default: 'whole']
     :param int indent: Indent level for pretty print. [Default: 0]
     :param int verbose: Level of verbose output? [Default: 1]
     :param str method: Return all ranked hits ('all'), or only the top hit ('best-hit')? [Default: 'all']
-    :param bool samestrand: Should the function filter hits with HSPs on different strands? [Default:True]
+    :param bool same_strand: Should the function filter hits with HSPs on different strands? [Default:True]
     :return list: Returns a list of tuples containing the final hit data in BED6 format.  
     """
     id_list = []
     if verbose:
         print('Beginning ID_Ranker...', indent=indent)
-    if isinstance(record, SearchIO.QueryResult):
-        print('SearchIO detected.', indent=indent)
-        # Figure out what kind of search program was run:
-        if record.program == 'blat':
-            if verbose > 2:
-                print('Results obtained from BLAT run.', indent=indent+1)
-        elif 'blast' in record.program:
-            if verbose > 2:
-                print('Results obtained from BLAST run.', indent=indent+1)
+    if record.program == 'blat':
+        if verbose > 2:
+            print('Results obtained from BLAT run.', indent=indent+1)
+    elif 'blast' in record.program:
+        if verbose > 2:
+            print('Results obtained from BLAST run.', indent=indent+1)
+    else:
+        raise NotImplementedError('Sorry, your program {} is not yet '
+                                  'implemented for RecBlast!'.format(record.program))
+
+    # Create filter functions:
+    def hsp_minscores(hsp):
+        return hsp.score >= int(perc_score * top_score)
+
+    def hsp_min_query_span(hsp):
+        return hsp.query_span >= perc_query_span * top_length
+
+    def hsp_perc_ident(hsp):
+        return hsp.ident_pct >= perc_ident
+
+    def hsp_same_strand(hsp):
+        if same_strand:
+            return all([i == hsp.hit_strand_all[0] for i in hsp.hit_strand_all]) == True
         else:
-            raise NotImplementedError('Sorry, your program {} is not yet '
-                                      'implemented for RecBlast!'.format(record.program))
-
-        # Create filter functions:
-        def hit_minhsps(hit):
-            return len(hit.hsps) >= min_n_hsps
-
-        def hit_minscores(hit):
-            return sum([hsp.score for hsp in hit.hsps]) >= int(perc_score * top_score)
-
-        def hit_minlength(hit):
-            return sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])
-                        ]) >= perc_length * top_length
-
-        def hit_perc_id(hit):
-            # return _percent_identity_searchio(hit) >= perc_ident
             return True
 
-        def hit_hsp_span(hit):
-            top_span = max([hsp.hit_span for hsp in hit])
-            hit = hit.filter(lambda hsp: hsp.hit_span >= int(perc_span * top_span))
-            return hit
+    def hit_sort_scores(hit):
+        return sum([hsp.score for hsp in hit.hsps])
 
-        def hit_same_strand(hit):
-            x = [bla.hit_strand_all for bla in hit.hsps]
-            y = all(s > 0 for s in flatten(x)) or all(s < 0 for s in flatten(x)) or \
-                all(s == 0 for s in flatten(x)) or None
-            return y
+    def hsp_sort_scores(hsp):
+        return hsp.score
 
-        # Three more functions for to make great progress
-        def sort_scores(hit):
-            return sum([hsp.score for hsp in hit.hsps])
+    # Get top stats:
+    top_score = max([max([hsp.score for hsp in hit.hsps]) for hit in record])
+    if verbose > 1:
+        print('Top score for {}:\t'.format(record.id), top_score, indent=indent)
+    top_length = max([max([hsp.query_span for hsp in hit]) for hit in record])
+    if verbose > 1:
+        print('Longest hit for {}:\t'.format(record.id), top_length, indent=indent)
 
-        def hit_target_span(hit):
-            return list(merge_ranges([(hsp.hit_start, hsp.hit_end) for hsp in hit]))
+    if verbose > 2:
+        print("ALL HITS STATS:")
+        print('|\tHit Name:\t|\t# HSPs\t|\tScore:\t|\tLength:\t|\tP.Ident\t|')
+        print("==========================================================")
+        for hit in record:
+            name = hit.id
+            n_hsp = len(hit.hsps)
+            print('|\t{HitName}\t|\t{HSP}\t|'.format(HitName=name, HSP=n_hsp))
+            print("------------------------------------------------------")
+            for hsp in hit:
+                print('|\t{id}\t|\t{hf}\t|\t{score}\t|\t{length}\t|\t{ident}\t|'.format(id=hsp.hit_id,
+                                                                                     hf=len(hsp),
+                                                                                     score=hsp.score,
+                                                                                     length=hsp.hit_span,
+                                                                                     ident=hsp.ident_pct))
 
-        def hit_query_coverage(hit):
-            return list(merge_ranges(flatten([list(merge_ranges(hsp.query_range_all)) for hsp in hit])))
+    # Execute filters:
+    # query_span
+    if verbose > 1:
+        print('Number of HSPs for {}:\t'.format(record.id), sum([len(i.hsps) for i in record]), indent=indent)
+        print('Filtering out all HSPs shorter than {}...'.format(perc_query_span * top_length), indent=indent)
+    record = record.hsp_filter(hsp_min_query_span) if perc_query_span else record
+    if not record:
+        text = ('No hits in Query Results match a stretch of the query sequence longer than '
+                '{0}!').format((top_length * perc_query_span))
+        raise NoHitsError(text)
+    # Score
+    if verbose > 1:
+        print('Number of HSPs for {}:\t'.format(record.id), sum([len(i.hsps) for i in record]), indent=indent)
+        print('Filtering out all HSPs with scores less than {}...'.format(top_score * perc_score), indent=indent)
+    record = record.hsp_filter(hsp_minscores) if perc_score else record
+    if not record:
+        text = 'No hits in Query Results have a score above the minimum of {0}!'.format((top_score * perc_score))
+        raise NoHitsError(text)
+    if verbose > 1:
+        print('Number of HSPs for {}:\t'.format(record.id), sum([len(i.hsps) for i in record]), indent=indent)
+        print('Filtering out all HSPs with percent identity below {}...'.format(perc_ident), indent=indent)
+    record = record.hsp_filter(hsp_perc_ident) if perc_ident else record
+    if not record:
+        text = 'No hits in Query Results have a percent identity above {}%!'.format(round(perc_ident*100, 2))
+        raise NoHitsError(text)
+    if verbose > 1:
+        print('Number of HSPs for {}:\t'.format(record.id), sum([len(i.hsps) for i in record]), indent=indent)
+        if same_strand:
+            print('Filtering out all HSPs that have fragments on opposite strands...')
+    record = record.hsp_filter(hsp_same_strand) if same_strand else record
+    if not record:
+        text = 'No hits in Query Results are on the same strand!'
+        raise NoHitsError(text)
+    # Sorting them for good measure
+    if verbose > 1:
+        print('Sorting all hits by descending scores!', indent=indent)
+    record.sort(key=hit_sort_scores, reverse=True, in_place=True)
+    for hit in record:
+        hit.sort(key=hsp_sort_scores, reverse=True, in_place=True)
+    if verbose > 1:
+        print('Done!', indent=indent)
+    # Add items to id_list
+    # Big note: think in HSPs, not Hits
+    n = 1
+    for hit in record:
+        for hsp in hit:
 
-        # Get top stats:
-        top_score = max([sum([hsp.score for hsp in hit.hsps]) for hit in record])
-        if verbose > 1:
-            print('Top score for {}:\t'.format(record.id), top_score, indent=indent)
-        top_length = max([sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end)
-                                                                   for hsp in hit])
-                               ]) for hit in record])
-        if verbose > 1:
-            print('Longest hit for {}:\t'.format(record.id), top_length, indent=indent)
-
-        if verbose > 2:
-            print("ALL HITS STATS:")
-            print('Hit Name:\t|\t# HSPs\t|\tScore:\t|\tLength:\t|\tP.Ident\t|\thsp_span_list\t|')
-            for hit in record:
-                name = hit.id
-                n_hsp = len(hit.hsps)
-                score = sum([hsp.score for hsp in hit.hsps])
-                length = sum([i[-1] - i[0] for i in merge_ranges([(hsp.query_start, hsp.query_end) for hsp in hit])])
-                ident = percent_identity_searchio(hit)
-                span = [hsp.hit_span for hsp in hit]
-                print('{HitName}\t|\t{HSP}\t|\t{Score}\t|'
-                      '\t{Length}\t|\t{PIdent}\t|\t{span_list}\t|'.format(HitName=name, HSP=n_hsp, Score=score,
-                                                                          Length=length, PIdent=ident, span_list=span))
-        # Execute filters:
-        # HSP
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record.id), len(record), indent=indent)
-            print('Filtering based on min. number of HSPs...', indent=indent)
-        record1 = record.hit_filter(hit_minhsps) if min_n_hsps else record
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record1.id), len(record1), indent=indent)
-        if not record1:
-            raise NoHitsError('No hits in Query Results have {} or more HSPs!'.format(min_n_hsps))
-        # HSP.span
-        if verbose > 1:
-            print('Filtering out all HSPs with a span below {} of the longest HSP...'.format(perc_span), indent=indent)
-        record2 = record1.hit_map(hit_hsp_span) if perc_span else record1
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record2.id), len(record2), indent=indent)
-        # Length
-        if verbose > 1:
-            print('Filtering out all hits shorter than {}...'.format(perc_length*top_length), indent=indent)
-        record3 = record2.hit_filter(hit_minlength) if perc_length else record2
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record3.id), len(record3), indent=indent)
-        if not record3:
-            raise NoHitsError('No hits in Query Results above min_length {0}!'.format((top_length * perc_length)))
-        # Score
-        if verbose > 1:
-            print('Filtering out all hits with scores less than {}...'.format(top_score * perc_score), indent=indent)
-        record4 = record3.hit_filter(hit_minscores) if perc_score else record3
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record4.id), len(record4), indent=indent)
-        if not record4:
-            raise NoHitsError('No hits in Query Results above minimum score {0}!'.format((top_score * perc_score)))
-        # Percent Identity
-        if verbose > 1:
-            print('Filtering out all hits with a percent identity below {}...'.format(perc_ident),
-                  indent=indent)
-        record5 = record4.hit_filter(hit_perc_id) if perc_ident else record4
-        if verbose > 1:
-            print('Number of hits for {}:\t'.format(record5.id), len(record5), indent=indent)
-        if not record5:
-            raise NoHitsError('No hits in Query Results above minimum score {0}!'.format((top_score * perc_score)))
-        # If strand is set to strict, it will filter out hits that have different strandedness in HSPs
-        if samestrand:
-            if verbose > 1:
-                print('Filtering out all hits whose HSPs are not on the same strand...', indent=indent)
-            record6 = record5.hit_filter(hit_same_strand)
-            if verbose > 1:
-                print('Number of hits for {}:\t'.format(record6.id), len(record6), indent=indent)
-            if not record6:
-                raise NoHitsError('No hits in Query Results with all HSPs on the same strand!')
-        else:
-            record6 = record5
-        # Sorting them for good measure
-        if verbose > 1:
-            print('Sorting all hits by descending scores!', indent=indent)
-        record6.sort(key=sort_scores, reverse=True, in_place=True)
-        if verbose > 1:
-            print('Done!', indent=indent)
-        # Add items to id_list
-        for hit in record6:
-            seq_chr = hit.id
-            seq_name = record.id
-            hts = hit_target_span(hit)
-            seq_cov = hit_query_coverage(hit)
-            if seq_method == 'whole':
-                seq_range = [hts[0][0], hts[-1][-1]]
-                seq_coverage = [seq_cov[0][0], seq_cov[-1][-1]]
-            elif seq_method == 'strict':
-                seq_range = [(i[0], i[-1]) for i in hts]
-                seq_coverage = [(s[0], s[-1]) for s in seq_cov]
+            # some quick strand math:
+            if hsp._has_hit_strand:
+                strands = set(hsp.hit_strand_all)
+                if len(strands) == 1:
+                    strand = "+" if strands == {1} else "-"
+                else:
+                    strand = "."
             else:
-                seq_range = ''
-                seq_coverage = ''
-            strands = flatten([bla.hit_strand_all for bla in hit.hsps])
-            if all(s > 0 for s in strands):
-                strand = '(+)'
-            elif all(s < 0 for s in strands):
-                strand = '(-)'
-            elif all(s == 0 for s in strands):
-                strand = '(0)'
-            else:
-                strand = '(N)'
-            seq_score = sum([hsp.score for hsp in hit.hsps])
+                strand = "."
             if verbose > 2:
-                print("Adding hit {} to id list".format(seq_chr + ':' + '-'.join([str(i) for i in seq_range[0:2]])),
+                print("Adding hit {chr}:{s}-{e} to id list".format(chr=hsp.hit_id,
+                                                                   s=str(hsp.hit_range[0]),
+                                                                   e=str(hsp.hit_range[1])),
                       indent=indent)
-            id_list.append((seq_chr, seq_range, seq_name, seq_score, strand, seq_coverage))
-            if method in ['best hit', 'best-hit']:
-                print('Best Hit Reciprocal BLAST was selected, ending Reverse BLASTS after first annotation!',
-                      indent=indent)
-                break
-    else:
-        RecBlastWarning('No guarantees that this is going to work as of commit 81d3d36')
-        align_scorelist = []
-        truthple = []
-        subject_range = []
-        query_start_end = []
-        if verbose > 1:
-            print('Sorting through alignment\'s HSPs to get top scores of all alignments...', indent=indent)
-        for alignment in record.alignments:
-            subject_range_hsp = []
-            query_start_end_hsp = []
-            hsp_scorelist = []
-            if verbose > 3:
-                print('Number of HSPs: ', len(alignment.hsps), indent=indent+1)
-            for hsp in alignment.hsps:
-                hsp_scorelist.append(hsp.score)
-                subject_range_hsp.append(hsp.sbjct_start)
-                subject_range_hsp.append(hsp.sbjct_end)
-                query_start_end_hsp.append((hsp.query_start, hsp.query_end))
-            hsp_scorelist.sort(reverse=True)
-            query_start_end.append([i for i in merge_ranges(query_start_end_hsp)])
-            subject_range.append((subject_range_hsp[0], subject_range_hsp[-1]))
-            if verbose > 3:
-                print("HSP Score List:", indent=indent+1)
-                print(hsp_scorelist, indent=indent+2)
-            if hsp_cumu_score:
-                align_scorelist.append(sum(hsp_scorelist))
-            else:
-                align_scorelist.append(hsp_scorelist[0])
-        if verbose > 1:
-            print('Done with first-round sorting!', indent=indent)
-        if verbose > 3:
-            for align_index, alignment in enumerate(record.alignments):
-                print(alignment.title, indent=indent)
-                print("\tAlignment Score List:", indent=indent+1)
-                print(align_scorelist[align_index], indent=indent+2)
-                print("\tQuery_start_end:", indent=indent+1)
-                print(query_start_end[align_index], indent=indent+2)
-                print("\tSubject Range:", indent=indent+1)
-                print(subject_range[align_index], indent=indent+2)
-        if verbose > 1:
-            print('Sorting through alignments to get all hits above threshold...', indent=indent)
+            # A little witchcraft before we do though
+            # turns out hsp.hit_start_all won't necessarily start with the starting point of the hit...
+            # That means we need to zip hit_start_all and hit_span_all, sort by the first one, then de-zip.
+            block_starts, block_spans = zip(*sorted(zip(hsp.hit_start_all, hsp.hit_span_all), key=itemgetter(0)))
 
-        for align_index, alignment in enumerate(record.alignments):
-            score_threshold = (perc_score * align_scorelist[0])
-            length_alignment = sum([i[-1] - i[0] for i in query_start_end[align_index]])
-            align_len_threshold = record.query_length * perc_length
-            if hsp_cumu_score:
-                hsp_scoretotal = sum([hsp.score for hsp in alignment.hsps])
-                truthple.append((align_index, hsp_scoretotal >= score_threshold, hsp.expect <= expect,
-                                 length_alignment >= align_len_threshold, alignment.title))
-            else:
-                truthple.append((align_index, hsp.score >= score_threshold, hsp.expect <= expect,
-                                 length_alignment >= align_len_threshold, alignment.title))
-        if verbose > 3:
-            print('List of Alignments and Criteria Status:', indent=indent)
-            print('i\t', 'Score\t', 'Expect\t', 'Length\t', 'Alignment.Title', indent=indent)
-            for i in range(len(record.alignments)):
-                print("{0}\t{1}\t{2}\t{3}\t{4}".format(truthple[i][0], truthple[i][1], truthple[i][2],
-                      truthple[i][3], truthple[i][4]), indent=indent)
-        for i in truthple:
-            if i[1] and i[2] and i[3]:
-                id_list.append((record.alignments[i[0]].title,
-                                '[:{0}-{1}]'.format(subject_range[i[0]][0],
-                                                    subject_range[i[0]][1]),
-                                align_scorelist[i[0]]))
-                if verbose > 2:
-                    print("Alignment {} added to id_list!".format(i[4]), indent=indent)
-            else:
-                if verbose > 2:
-                    print("WARNING: ALIGNMENT {} FAILED TO MEET CRITERIA!".format(i[4]), indent=indent)
-                    if not i[1]:
-                        print('Score was below threshold!', indent=indent)
-                    if not i[2]:
-                        print('Expect was below threshold!', indent=indent)
-                    if not i[3]:
-                        print('Length was below threshold!', indent=indent)
-        sorted(id_list, reverse=True, key=itemgetter(2))
+            # chr (start,end) id score strand thickStart thickEnd rgb blockcount blockspans blockstarts query_span
+            id_list.append((hsp.hit_id, hsp.hit_range, hsp.query_id, hsp.score, strand, hsp.hit_range[0],
+                            hsp.hit_range[1], "255,0,0", len(hsp.hit_start_all),
+                            ",".join([str(i) for i in block_spans]),
+                            ",".join([str(i-hsp.hit_range[0]) for i in block_starts]), hsp.query_range))
+
+            if return_only and n == return_only:
+                print('Returning only the top {} hits, ending here!'.format(return_only),
+                      indent=indent)
+                return id_list
+            n += 1
     return id_list

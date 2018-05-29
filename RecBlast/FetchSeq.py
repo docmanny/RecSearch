@@ -36,7 +36,7 @@ def format_range(seqrange, strand, addlength, indent, verbose):
         print('Adding {0} steps to the beginning and {1} steps to the end of the sequence!'.format(lextend, rextend),
               indent=indent)
     if lrange > rrange:
-        strand = '(+)' if strand == '(-)' else '(-)'
+        strand = '+' if strand == '-' else '-'
         lrange = seqrange[1]
         rrange = seqrange[0]
     newrange = tuple(map(lambda x, y: int(x) + y, (lrange, rrange), (lextend, rextend)))
@@ -70,8 +70,8 @@ def biosql_dbseqrecord_to_seqrecord(dbseqrecord_, off=False):
     :param bool off: Don't actually convert the DBSeqRecord. [Default: False]
     :return:
     """
-    assert isinstance(dbseqrecord_, DBSeqRecord), 'Input must be a DBSeqRecord, ' \
-                                                  'was of type {}!'.format(type(dbseqrecord_))
+    assert isinstance(dbseqrecord_, DBSeqRecord), ('Input must be a DBSeqRecord, '
+                                                   'was of type {}!').format(type(dbseqrecord_))
     if off:
         return dbseqrecord_
     else:
@@ -382,7 +382,8 @@ class FetchSeq(object):  # The meat of the script
         if verbose > 1:
             print('Full header for Entry:', indent=indent)
             print(self.id_rec, indent=indent)
-        item_chr, seq_range, item_name, score, strand, query_coverage = self.id_rec
+        (item_chr, seq_range, item_name, score, strand, thickStart,
+         thickEnd, rgb, blockcount, blockspans, blockstarts, query_coverage) = self.id_rec
 
         try:
             if verbose > 1:
@@ -392,6 +393,8 @@ class FetchSeq(object):  # The meat of the script
             if add_length != (0, 0):
                 seq_range, strand = format_range(seqrange=seq_range, strand=strand, addlength=add_length,
                                                  indent=indent + 1, verbose=verbose)
+                self.id_rec[1] = seq_range
+                self.id_rec[4] = strand
             if -1 in seq_range[0:2]:
                 id_full = '{0}'.format(item_chr)
             else:
@@ -429,17 +432,24 @@ class FetchSeq(object):  # The meat of the script
             if verbose > 1:
                 print('Done!', indent=indent)
         seq.features.append(SeqFeature.SeqFeature(type='duplicate'))
-        if strand == '(+)':
+        if strand == '+':
             s = 1
-        elif strand == '(-)':
+        elif strand == '-':
             s = -1
         else:
-            s = None
+            s = "."
         seq.features[0].location = SeqFeature.FeatureLocation(int(seq_range[0]), int(seq_range[1]), strand=s)
         seq.features[0].qualifiers['score'] = score
         seq.features[0].qualifiers['query_coverage'] = query_coverage
+        seq.features[0].qualifiers['thickStart'] = thickStart
+        seq.features[0].qualifiers['thickEnd'] = thickEnd
+        seq.features[0].qualifiers['itemRGB'] = rgb
+        seq.features[0].qualifiers['blockCount'] = blockcount
+        seq.features[0].qualifiers['blockSizes'] = blockspans
+        seq.features[0].qualifiers['blockStarts'] = blockstarts
+
         seq.name = item_chr
-        return item_chr, seq, itemnotfound
+        return id_full, seq, itemnotfound
 
     @staticmethod
     def entrez(id_item, seq_range, indent, add_length, verbose):
@@ -550,10 +560,13 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
                 print('id_prelist is empty!', indent=indent)
             return 'None'
     for id_item in ids:
-        assert len(id_item) == 6, "Item {0} in id_list has {1} items, not 5" \
-                                  "!".format(" ".join((" ".join(item) if not isinstance(item, str) else item 
-                                                      for item in id_item)),
-                                            len(id_item))
+        assert len(id_item) == 12, ("Item {0} in id_list has {1} items, not 5!\n"
+                                    "Format should be: "
+                                    "chr, (start,end), id, score, strand, thickStart, thickEnd, rgb, blockcount,"
+                                    " blockspans, blockstarts, query_span"
+                                    "!").format(" ".join((" ".join(item) if not isinstance(item, str) else item
+                                                        for item in id_item)),
+                                                len(id_item))
     if verbose > 1:
         print('Readied ids!', indent=indent)
 
@@ -600,7 +613,12 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
     if verbose > 1:
         print('Done!', indent=indent)
         print('Assigning FetchSeq records to queue... ', indent=indent)
+    id_order = []
     for i, id_rec in enumerate(ids):
+        try:
+            id_order.append("{0}:{1}-{2}".format(id_rec[0],id_rec[1][0],id_rec[1][1]))
+        except IndexError:
+            id_order.append("{0}".format(id_rec[0]))
         try:
             id_list.put(FetchSeq(id_rec=id_rec))
         except AssertionError as err:
@@ -626,11 +644,12 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
     for fs in fs_instances:
         if fs.is_alive():
             fs.join()
+    output_list = [output_dict[i] for i in id_order if i in output_dict]
     if write:
-        SeqIO.write([output_dict[i] for i in output_dict.keys()], output_name, output_type)
+        SeqIO.write(output_list, output_name, output_type)
         return
     else:
-        return output_dict, missing_items_list
+        return output_list, missing_items_list
 
 
 def seq_from_exon(query_record, forward_search_criteria):

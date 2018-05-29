@@ -60,16 +60,17 @@ def massively_translate_fasta(SeqIter):
 def translate_annotation(annotation, orig='refseq', to='symbol', species='human'):
     """
     Converts a name from one type to another using mygene.
-    :param annotation: 
-    :param orig: 
-    :param to: 
-    :return: 
+    :param annotation str:
+    :param orig str:
+    :param to str:
+    :param species str:
+    :return str:
     """
     mg = mygene.MyGeneInfo()
     out = mg.querymany(annotation, scopes=orig, fields=to, species=species)
     try:
         trans = out[0]
-        return trans['symbol']
+        return trans[to]
     except KeyError:
         raise Exception('No symbol found for {}'.format(annotation))
 

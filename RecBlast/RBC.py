@@ -15,42 +15,72 @@ from Bio.Blast.Record import Blast as BioBlastRecord
 from RecBlast import print, __version__
 from RecBlast.WarningsExceptions import *
 
+class RecBlastRecord(dict):
+    def __init__(self, proc_id=None, version=None, run_time=None, query_record=None, query_species=None,
+                 target_species=None, forward_search=None, forward_ids=None, recblast_unanno=None,
+                 reverse_search=None, reverse_ids=None, recblast_results=None, output_paths=None):
+        super(dict, self).__init__()
+        self.proc_id = proc_id if proc_id else ""
+        self.version = version if version else __version__
+        self.run_time = run_time if run_time else 0
+        self.query_record = query_record if query_record else SeqRecord(seq="")
+        self.query_species = query_species if query_species else ""
+        self.target_species = target_species if target_species else ""
+        self.forward_search = forward_search if forward_search else dict(search_results=BioBlastRecord,
+                                                                         search_errors='')
+        self.forward_ids = forward_ids if forward_ids else dict(ids=list(),
+                                                                missing_ids=list(),
+                                                                pretty_ids=list())
+        self.recblast_unanno = recblast_unanno if recblast_unanno else []
+        self.reverse_search = reverse_search if reverse_search else dict(search_results=BioBlastRecord,
+                                                                         search_errors='')
+        self.reverse_ids = reverse_ids if reverse_ids else dict(ids=list(), missing_ids=list(), pretty_ids=list())
+        self.recblast_results = recblast_results if recblast_results else [],
+        self.output_paths = output_paths if output_paths else dict(forward_search_output=Path(),
+                                                                   forward_id_score_output=Path(),
+                                                                   recblast_output_unanno=Path(),
+                                                                   reverse_search_output=list(),
+                                                                   recblast_output=Path(),
+                                                                   search_nohits=Path()
+                                                                   )
 
 class RecBlastContainer(dict):
     """RecBlastContainer class containing all intermediary and final RecBlast outputs."""
     def __init__(self, target_species, query_record, **kwargs):
         super(dict, self).__init__()
         if isinstance(query_record, SeqIO.SeqRecord):
-            self[target_species] = {query_record.id: dict(proc_id=kwargs.pop('proc_id', str()),
-                                                          version=kwargs.pop('version', __version__),
-                                                          run_time=kwargs.pop('run_time', 0),
-                                                          query_record=kwargs.pop('query_record', query_record),
-                                                          query_species=kwargs.pop('query_species', str()),
-                                                          forward_search=kwargs.pop('forward_search',
-                                                                                    dict(search_results=BioBlastRecord,
-                                                                                         search_errors='')),
-                                                          forward_ids=kwargs.pop('forward_ids',
-                                                                                 dict(ids=list(),
-                                                                                      missing_ids=list(),
-                                                                                      pretty_ids=list())),
-                                                          recblast_unanno=kwargs.pop('recblast_unanno', list()),
-                                                          reverse_search=kwargs.pop('reverse_search',
-                                                                                    dict(search_results=BioBlastRecord,
-                                                                                         search_errors='')),
-                                                          reverse_ids=kwargs.pop('reverse_ids',
-                                                                                 dict(ids=list(),
-                                                                                      missing_ids=list(),
-                                                                                      pretty_ids=list())),
-                                                          recblast_results=kwargs.pop('recblast_results', list()),
-                                                          output_paths=kwargs.pop('output_paths',
-                                                                                  dict(forward_search_output=Path(),
-                                                                                       forward_id_score_output=Path(),
-                                                                                       recblast_output_unanno=Path(),
-                                                                                       reverse_search_output=list(),
-                                                                                       recblast_output=Path(),
-                                                                                       search_nohits=Path()
-                                                                                       ))
-                                                          )}
+            self[target_species] = {query_record.id: dict(
+                proc_id=kwargs.pop('proc_id', str()),
+                version=kwargs.pop('version', __version__),
+                run_time=kwargs.pop('run_time', 0),
+                query_record=kwargs.pop('query_record', query_record),
+                target_species=kwargs.pop('target_species', target_species),
+                query_species=kwargs.pop('query_species', str()),
+                forward_search=kwargs.pop('forward_search',
+                                          dict(search_results=BioBlastRecord,
+                                               search_errors='')),
+                forward_ids=kwargs.pop('forward_ids',
+                                       dict(ids=list(),
+                                            missing_ids=list(),
+                                            pretty_ids=list())),
+                recblast_unanno=kwargs.pop('recblast_unanno', list()),
+                reverse_search=kwargs.pop('reverse_search',
+                                          dict(search_results=BioBlastRecord,
+                                               search_errors='')),
+                reverse_ids=kwargs.pop('reverse_ids',
+                                       dict(ids=list(),
+                                            missing_ids=list(),
+                                            pretty_ids=list())),
+                recblast_results=kwargs.pop('recblast_results', list()),
+                output_paths=kwargs.pop('output_paths',
+                                        dict(forward_search_output=Path(),
+                                             forward_id_score_output=Path(),
+                                             recblast_output_unanno=Path(),
+                                             reverse_search_output=list(),
+                                             recblast_output=Path(),
+                                             search_nohits=Path()
+                                             ))
+            )}
         elif isinstance(query_record, dict):
             self[target_species] = query_record
         else:
@@ -129,8 +159,8 @@ class RecBlastContainer(dict):
                 query_record[query] = deepcopy(self[species][query])
                 summary_statistic = kwargs.pop('summary_statistic', None)
                 recblast_object = kwargs.pop('recblast_object', 'recblast_results')
-                assert isinstance(recblast_object, str), 'recblast_object was of type {}, ' \
-                                                         'must be a str!'.format(type(recblast_object))
+                assert isinstance(recblast_object, str), ('recblast_object was of type {}, '
+                                                          'must be a str!').format(type(recblast_object))
                 if summary_statistic:
                     try:
                         stat = summary_statistic(self[species][query][recblast_object], *args, **kwargs)
@@ -274,8 +304,8 @@ class RecBlastContainer(dict):
                     nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom='complete',
                                              verbose=verbose)
                 else:
-                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom=custom,
-                                             verbose=verbose)
+                   nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom=custom,
+                                                     verbose=verbose)
             elif filetype.lower() in 'gff3':
                 nwrite = self._write_gff3(file_loc=file_loc, verbose = verbose, **kwargs)
             else:
@@ -318,7 +348,12 @@ class RecBlastContainer(dict):
                             end = '0'
                         try:
                             strand = str(loc.strand) if loc.strand is not None else '.'
-                            if strand is None or strand == '0':
+
+                            if strand == "1":
+                                strand = "+"
+                            elif strand == "-1":
+                                strand = "-"
+                            else:
                                 strand = '.'
                         except AttributeError:
                             strand = '.'
@@ -358,7 +393,11 @@ class RecBlastContainer(dict):
                         new_cols = []
                         if custom == 'complete':
                             for val in feat.qualifiers.keys():
-                                new_cols.append('{0}={1}'.format(str(val), str(feat.qualifiers[val])))
+                                if val in ['score','thickStart','thickEnd','itemRGB', 'blockCount', 'blockSizes',
+                                           'blockStarts']:
+                                    continue
+                                else:
+                                    new_cols.append('{0}={1}'.format(str(val), str(feat.qualifiers[val])))
                         for val in custom:
                             if val in feat.qualifiers.keys():
                                 new_cols.append('{0}={1}'.format(str(val), str(feat.qualifiers[val])))
@@ -396,8 +435,8 @@ class RecBlastContainer(dict):
             outdb = sqlite3.connect(str(sqlfile))
         cursor = outdb.cursor()
         # Create the table if it doesn't exist
-        command = 'CREATE TABLE IF NOT EXISTS {tn} (id INT PRIMARY KEY , target_species TEXT, query_species TEXT, ' \
-                  'query_name TEXT, query_record TEXT, hit_1 TEXT)'.format(tn=table_name)
+        command = ('CREATE TABLE IF NOT EXISTS {tn} (id INT PRIMARY KEY , target_species TEXT, query_species TEXT, '
+                   'query_name TEXT, query_record TEXT, hit_1 TEXT)').format(tn=table_name)
         command = command.replace('-', '_')
         cursor.execute(command)
         outdb.commit()
@@ -456,7 +495,7 @@ class RecBlastContainer(dict):
                         outdb.commit()
                     except AttributeError as err:
                         print('WARNING! Could not write output of RecBlastContainer[{0}, {1}]'.format(ts, qn))
-                        print('Error:\n', err, indent=1)
+                        print('Error:\n', type(err), ": ", err, indent=1)
                         continue
         outdb.commit()
         outdb.close()
