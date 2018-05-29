@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 
 import dill as pickle
-from _pickle import UnpicklingError
+from pickle import UnpicklingError
 from Bio import SeqIO, SeqFeature
 from Bio.SeqRecord import SeqRecord
 from Bio.Blast.Record import Blast as BioBlastRecord
