@@ -14,6 +14,12 @@ class RecBlastWriteError(RecBlastException):
 class SearchError(RecBlastException):
     pass
 
+class ForwardSearchError(RecBlastException):
+    pass
+
+class ReverseSearchError(RecBlastException):
+    pass
+
 
 class FetchSeqError(RecBlastException):
     pass
