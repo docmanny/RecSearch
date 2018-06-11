@@ -3,6 +3,7 @@
 from pathlib import Path
 import re
 
+
 def read(file_location):
     bedfile = Path(file_location)
     assert bedfile.exists(), "Given bedfile path does not exist!"
@@ -17,18 +18,18 @@ def read(file_location):
     pats[-3:] = [r'{0}=".+"(?=\s)'.format(i) for i in header_names[-3:]]
     pats_re = [re.compile(p) for p in pats]
     header_dict = {}
-    is_bed_detail=False
+    is_bed_detail = False
     with bedfile.open() as bed:
         for line in bed:
-            #print(line)
+            # print(line)
             if line.startswith("browser"):
                 continue
             elif line.startswith("track"):
                 items = list(filter(None, [p.findall(line) for p in pats_re]))
                 p2 = re.compile("(\w+)=\"?(.+)\"?")
                 header_dict = {k: v for k, v in [p2.match(i[0]).groups() for i in items]}
-                #for k, v in header_dict.items():
-                    #print(k,v, sep="\t")
+                # for k, v in header_dict.items():
+                # print(k,v, sep="\t")
                 if "type" in header_dict:
                     is_bed_detail = header_dict["type"] == "bedDetail"
                 break
@@ -36,6 +37,7 @@ def read(file_location):
                 break
         records = (line.strip().split("\t") for line in bed)
         if is_bed_detail:
+            bed_record = None
             """
             record = next(records)
             core_record = record[:-2]
@@ -67,8 +69,6 @@ def read(file_location):
     return bed_record
 
 
-
-
 class BEDLine(object):
     def __init__(self, **kwargs):
         self.chr = kwargs.pop("chr", ".")
@@ -81,7 +81,7 @@ class BEDLine(object):
         self.thick_end = int(kwargs.pop("thick_end", self.end))
         self.item_rgb = kwargs.pop("item_rgb", "0,0,0")
         self.block_count = int(kwargs.pop("block_count", 0))
-        self.block_sizes = kwargs.pop("block_sizes", self.end-self.start)
+        self.block_sizes = kwargs.pop("block_sizes", self.end - self.start)
         self.block_starts = kwargs.pop("block_starts", self.start)
         if "detail_id" in kwargs or "detail_description" in kwargs:
             self.detail_id = kwargs.pop("detail_id", ".")
@@ -93,7 +93,7 @@ class BEDLine(object):
     def is_bed12(self):
         return all([hasattr(self, attr) for attr in ["block_starts", "block_sizes", "block_count", "item_rgb",
                                                      "thick_end", "thick_start", "strand", "score",
-                                                     "name", "end", "start","chr"]])
+                                                     "name", "end", "start", "chr"]])
 
     def is_bed6(self):
         return all([hasattr(self, attr) for attr in ["strand", "score", "name", "end", "start", "chr"]])
@@ -108,7 +108,7 @@ class BEDLine(object):
     def as_bed12(self):
         for attr in ["block_starts", "block_sizes", "block_count", "item_rgb",
                      "thick_end", "thick_start", "strand", "score",
-                     "name", "end", "start","chr"]:
+                     "name", "end", "start", "chr"]:
             if hasattr(self, attr):
                 continue
             else:
@@ -126,7 +126,6 @@ class BEDLine(object):
                 continue
             else:
                 self.__setattr__(attr, ".")
-
 
     def as_bed4(self):
         for attr in ["block_starts", "block_sizes", "block_count", "item_rgb",
@@ -161,7 +160,7 @@ class BEDLine(object):
 
     def __repr__(self):
         r = "BEDLine("
-        r += ", ".join("{0}={1}".format(k, str(v)) for k,v in self.__dict__.items())
+        r += ", ".join("{0}={1}".format(k, str(v)) for k, v in self.__dict__.items())
         r += ")"
         return r
 
@@ -212,7 +211,7 @@ class BEDRecord(list):
         with bedfile.open("w") as outf:
             if with_header:
                 outf.write(("track"
-                            " ".join(('{0}="{1}"'.format(k,v) for k,v in self.header.items()))
+                            " ".join(('{0}="{1}"'.format(k, v) for k, v in self.header.items()))
                             ))
                 outf.write("\n")
             for line in self:
