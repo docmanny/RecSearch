@@ -1,10 +1,10 @@
 import logging
+import warnings
 from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
 from copy import deepcopy
-from itertools import product, zip_longest
-from collections import Counter
+from itertools import product
 from operator import itemgetter
 
 import multiprocess as multiprocessing
@@ -20,7 +20,7 @@ from RecBlast.FetchSeq import fetchseq
 from RecBlast.Search import Search, get_searchdb, blat_server, id_ranker
 from RecBlast.RBC import RecBlastContainer
 from RecBlast.WarningsExceptions import *
-from RecBlast.Auxilliary import translate_annotation
+from RecBlast.Auxilliary import translate_ids
 
 
 class RecBlastMPThread(multiprocessing.Process):
@@ -139,41 +139,46 @@ class RecBlastRun(object):
                                                         ).replace(' ', '_'))
         )
 
-    def translate_annotation(self, hit, translate_annotation_params=None):
-        """Given a hit, uses the parameters in RecSearch.translate_annotation to translate hit name into something else
+    @staticmethod
+    def _translate_annotations_(hit_list, translate_annotation_params=None):
+        """Translates list of hit ids to another standard based on parameters.
 
-        :param hit:
+        :param hit_list:
+        :param translate_annotation_params:
         :return:
         """
-        hit = [h for h in hit]
+
         if translate_annotation_params:
             if translate_annotation_params["method"].lower() == "mygene":
-                hit[0] = translate_annotation(hit[0],
-                                              orig=translate_annotation_params["anno_type_old"],
-                                              to=translate_annotation_params["anno_type_new"],
-                                              species=translate_annotation_params["species"])
+                return translate_ids(hit_list,
+                                     orig=translate_annotation_params["anno_type_old"],
+                                     to=translate_annotation_params["anno_type_new"],
+                                     species=translate_annotation_params["species"])
             elif translate_annotation_params["method"].lower() == "table":
-                hit[0] = translate_annotation_params["trans_dict"][hit[0]]
-        return hit
+                trans_dict = translate_annotation_params["trans_dict"]
+                return [trans_dict[rec] if rec in trans_dict else rec for rec in hit_list]
+        else:
+            return hit_list
 
-    def _search_(self, type, settings, criteria, outpath, verbose, indent):
-        search = Search(search_type=type)
+    def _search_(self, record, target_species, search_type, settings, criteria, outpath, verbose, indent):
+        search = Search(search_type=search_type)
         search_params = {}
         search_params.update(settings)
         search_params.update(criteria)
         if self.start_rb and "search" in self.start_rb[0].lower():
             searchrecord, search_err = (Search.load(Path(self.start_rb[1],
-                                                                "{0}_{1}.{2}"
-                                                                "".format(self.target_species.replace(' ', "_"),
-                                                                          self.seq_record.name,
-                                                                          self.start_rb[2]))),
-                                               None)
+                                                         "{0}_{1}.{2}"
+                                                         "".format(self.target_species.replace(' ', "_"),
+                                                                   self.seq_record.name,
+                                                                   self.start_rb[2]))),
+                                        None)
         else:
-            searchrecord, search_err = search(seq_record=self.seq_record, species=self.target_species,
-                                                     search_type=type,
-                                                     blastoutput_custom=outpath,
-                                                     verbose=verbose, indent=indent + 1,
-                                                     **search_params)
+            searchrecord, search_err = search(seq_record=record,
+                                              species=target_species,
+                                              search_type=search_type,
+                                              blastoutput_custom=outpath,
+                                              verbose=verbose, indent=indent + 1,
+                                              **search_params)
         if search_err:
             raise SearchError(search_err)
         else:
@@ -240,7 +245,6 @@ class RecBlastRun(object):
             print('Items were missing!', indent=indent)
             for i in missing_items:
                 print(i, indent=indent + 1)
-
         if seq_list:
             return seq_list, missing_items
         else:
@@ -248,60 +252,17 @@ class RecBlastRun(object):
                                                                                              self.seq_record.id)
             raise NoHitsError(message)
 
-
-    def _annotate_(self, reverse_hit_list, translate_annotation_params, verbose, indent):
-        # ANNOTATION
-        for anno in reverse_hit_list:
-            if translate_annotation_params:
-                try:
-                    if verbose:
-                        print(("Translating annotation "
-                               "using method {}").format(translate_annotation_params["method"]),
-                              indent=indent + 1)
-                    new_anno = self.translate_annotation(anno,
-                                                         translate_annotation_params=translate_annotation_params)
-                    # TODO: add parameter to RecSearch to allow specification of translate_annotation kwargs!
-                    # TODO: even better, allow the user to explicitly specify a function here for custom translation
-                except Exception as err:
-                    if verbose:
-                        print(("Failed to translate annotation {}").format(anno[0]),
-                              indent=indent + 1)
-                        print("Error:", indent=indent + 1)
-                        print("{0}: {1}".format(type(err), err), indent=indent + 2)
-                    new_anno = anno
-            else:
-                new_anno = anno
-
-            reverse_search_annotations.append('\t |[ {0}:{1}-{2}{3} ]|'.format(new_anno[0], new_anno[1][0],
-                                                                               new_anno[1][1], new_anno[4]))
-            if reciprocal_method in ['1-to-1', '1:1', 'best-hit', 'best hit']:
-                print('Best Hit Reciprocal BLAST was selected, will only use top hit for annotation!',
-                      indent=indent)
-                continue
-        if not reverse_search_annotations:
-            print('No Reverse search hits were found for this hit!', indent=indent + 1)
-            print('Continuing to next Sequence!', indent=indent + 1)
-            continue
-        else:
-            if verbose > 1:
-                print('Done. Annotating RecBlast Hits:', indent=indent + 1)
-        reverse_ids = rc_container['reverse_ids']
-        reverse_ids['ids'] = reverse_search_annotations
-        fw_hit_record.features[0].qualifiers["annotations"] += reverse_search_annotations
-        if reciprocal_method in ['1-to-1', '1:1']:
-            print('1:1 Best Hit Reciprocal BLAST was selected, ending run after first hit!',
-                  indent=indent)
-            reverse_search_annotations = reverse_search_annotations[0] if \
-                isinstance(reverse_search_annotations, list) \
-                else reverse_search_annotations
-            fw_hit_record.description += '|-|' + reverse_search_annotations
-            break
-        else:
-            fw_hit_record.description += '|-|'.join(reverse_search_annotations) if \
-                isinstance(reverse_search_annotations, list) \
-                else '|-|' + reverse_search_annotations
+    @staticmethod
+    def _annotate_forward_hits_(fw_hit_record, reverse_hit_list, verbose, indent):
+        reverse_search_annotations = ",".join(('{0}:{1}-{2}({3})'.format(anno[0], anno[1][0],
+                                                                         anno[1][1], anno[4])
+                                               for anno in reverse_hit_list))
+        fw_hit_record.features[0].qualifiers["annotations"] = reverse_search_annotations
+        fw_hit_record.description += '\tAnnotations=' + reverse_search_annotations
         if verbose > 3:
-            print(fw_hit_record, indent=indent + 2)
+            print("New Hit Record Description:", indent=indent)
+            print(fw_hit_record.description, indent=indent + 1)
+        return fw_hit_record
 
     def __call__(self, proc_id, query_species, forward_search_type, forward_search_criteria,
                  forward_search_settings, sequence_source_type, sequence_source_settings, reverse_search_type,
@@ -335,7 +296,9 @@ class RecBlastRun(object):
             if verbose:
                 message = "Performing Forward Search for Record \"{}\": ".format(self.seq_record.id)
                 print(message, indent=indent)
-            forward_search_record = self._search_(type=forward_search_type,
+            forward_search_record = self._search_(record=self.seq_record,
+                                                  target_species=self.target_species,
+                                                  search_type=forward_search_type,
                                                   settings=forward_search_settings,
                                                   criteria=forward_search_criteria,
                                                   outpath=output_paths["forward_search_output"],
@@ -362,11 +325,10 @@ class RecBlastRun(object):
                                                                                          end=id_i[1][1], name=id_i[2],
                                                                                          score=id_i[3], strand=id_i[4])
                              for id_i in f_id_ranked]
-            forward_ids['pretty_ids'] = f_id_out_list
+            forward_ids['pretty_ids'] = None if memory_saver_level else f_id_out_list
         except RecBlastException as err:
             print("{0}: {1}".format(str(type(err)), err))
             return rc_container_full
-
 
         # FETCHSEQ
         try:
@@ -389,14 +351,20 @@ class RecBlastRun(object):
         if verbose:
             message = 'Performing Reverse Searches:'
             print(message, indent=indent)
+        if reciprocal_method in ['1-to-1', '1:1']:
+            if verbose:
+                message = '1:1 Reciprocal BLAST was selected, will only annotate top hit!'
+                print(message, indent=indent)
+            recblast_sequence = [recblast_sequence[0]]
         indent += 1
         old_indent = indent
+
         for index, fw_hit_record in enumerate(recblast_sequence):
-            indent=old_indent
+            indent = old_indent
             assert isinstance(fw_hit_record, SeqRecord), ('Warning! entry_record is of type {} '
-                                                   'rather than SeqRecord!').format(str(type(fw_hit_record)))
+                                                          'rather than SeqRecord!').format(str(type(fw_hit_record)))
             if verbose:
-                message = "Hit #{0}: {1}".format(index, fw_hit_record)
+                message = "Hit #{0}: {1}".format(index, fw_hit_record.name)
                 print(message, indent=indent)
             indent += 1
             if verbose > 1:
@@ -423,10 +391,12 @@ class RecBlastRun(object):
                 if verbose:
                     message = "Performing Reverse Search for Record \"{}\": ".format(fw_hit_record.id)
                     print(message, indent=indent)
-                reverse_search_record = self._search_(type=type,
+                reverse_search_record = self._search_(record=fw_hit_record,
+                                                      target_species=query_species,
+                                                      search_type=reverse_search_type,
                                                       settings=reverse_search_settings,
                                                       criteria=reverse_search_criteria,
-                                                      outpath=output_paths[-1],
+                                                      outpath=output_paths['reverse_search_output'][-1],
                                                       verbose=verbose,
                                                       indent=indent + 1)
             except RecBlastException as err:
@@ -440,19 +410,17 @@ class RecBlastRun(object):
                 message = "Ranking Reverse Hits: "
                 print(message, indent=indent)
             try:
-                reverse_hits = self._id_ranker_(search_record=forward_search_record, verbose=verbose,
+                r_id_ranked = self._id_ranker_(search_record=reverse_search_record, verbose=verbose,
                                                return_only=1 if reciprocal_method in ['1:1', '1-to-1'] else None,
                                                search_criteria=reverse_search_criteria, indent=indent+1)
-                if reciprocal_method in ['1:1', '1-to-1', 'best-hit']:
-                    assert len(reverse_hits) == 1, "Check the 'return_only' parameter, something's weird!"
-                forward_ids = rc_container['forward_ids']
-                forward_ids['ids'] = None if memory_saver_level else f_id_ranked
-                f_id_out_list = [
+                reverse_ids = rc_container['reverse_ids']
+                reverse_ids['ids'] = None if memory_saver_level else r_id_ranked
+                r_id_out_list = [
                     '{chr}\t{start}\t{end}\t{name}\t{score}\t{strand}\n'.format(chr=id_i[0], start=id_i[1][0],
                                                                                 end=id_i[1][1], name=id_i[2],
                                                                                 score=id_i[3], strand=id_i[4])
-                    for id_i in f_id_ranked]
-                forward_ids['pretty_ids'] = f_id_out_list
+                    for id_i in r_id_ranked]
+                reverse_ids['pretty_ids'] = None if memory_saver_level else r_id_out_list
             except NoHitsError:
                 print('No Reverse search hits were found for this hit!', indent=indent)
                 print('Continuing to next Sequence!', indent=indent)
@@ -460,18 +428,40 @@ class RecBlastRun(object):
             except RecBlastException as err:
                 print("{0}: {1}".format(str(type(err)), err))
                 return rc_container_full
-            fw_hit_record.features[0].qualifiers["annotations"] = []
+            fw_hit_record.features[0].qualifiers["annotations"] = ""
+            if reciprocal_method in ['best-hit', 'best hit']:
+                if verbose:
+                    message = 'Best Hit Reciprocal BLAST was selected, will only use top hit for annotation!'
+                    print(message, indent=indent)
+                r_id_ranked = [r_id_ranked[0]]
 
             # ANNOTATION
+            if translate_annotation_params:
+                try:
+                    if verbose:
+                        message = "Translating annotation using method {}".format(translate_annotation_params["method"])
+                        print(message, indent=indent)
+                    r_ids = [i[0] for i in r_id_ranked]
+                    new_anno = self._translate_annotations_(r_ids,
+                                                            translate_annotation_params=translate_annotation_params)
+                    for i, new_id in enumerate(new_anno):
+                        r_id_ranked[i][0] = new_id
+                except Exception as err:
+                    if verbose:
+                        print("Failed to translate annotation!",
+                              indent=indent + 1)
+                        print("Error:", indent=indent + 1)
+                        print("{0}: {1}".format(type(err), err), indent=indent + 2)
             try:
-                annotation = self._annotate_() #TODO: FINISH THIS
-
-        if not isinstance(recblast_sequence, list):
-            recblast_sequence = [recblast_sequence]
-        if recblast_sequence == list():
-            recblast_sequence.append(SeqRecord(''))
-        assert all((isinstance(rec, SeqRecord) for rec in recblast_sequence)), "Somehow one of the 'records' in " \
-                                                                               "recblast_sequence was not a SeqRecord?"
+                if verbose:
+                    print('Annotating RecBlast Hits:', indent=indent)
+                recblast_sequence[index] = self._annotate_forward_hits_(fw_hit_record=fw_hit_record,
+                                                                        reverse_hit_list=r_id_ranked,
+                                                                        verbose=verbose,
+                                                                        indent=indent+1)
+            except RecBlastException as err:
+                print("{0}: {1}".format(str(type(err)), err))
+                return rc_container_full
         rc_container['recblast_results'] = recblast_sequence
         if memory_saver_level > 1:
             rc_container_full = (target_species,
@@ -486,7 +476,7 @@ class RecBlastRun(object):
                                                             h_query=self.seq_record.name,
                                                             h_score=str(rec.features[0].qualifiers['score']),
                                                             h_strand=rec.features[0].location.strand,
-                                                            h_anno=rec.description.split('|[')[1].rstrip(']|').strip(),
+                                                            h_anno=rec.features[0].qualifiers["annotations"],
                                                             h_coverage=rec.features[0].qualifiers['query_coverage']
                                                             ) for rec in recblast_sequence]
                                  ))
@@ -496,7 +486,6 @@ class RecBlastRun(object):
         print(proc_id, self.seq_record.id, sep='\t')
         print('Run time: ', run_time)
         return rc_container_full
-        # def run(self):
 
 
 class RecSearch(object):
@@ -578,7 +567,7 @@ class RecSearch(object):
                                                                ).format(self.forward_search_type,
                                                                         ', '.join(self.verbose))
         assert self.reverse_search_type in self.search_types, ("Reverse search type {0} is invalid, currently "
-                                                              "supported search types are: {1}."
+                                                               "supported search types are: {1}."
                                                                ).format(self.reverse_search_type,
                                                                         ', '.join(self.verbose))
 
@@ -608,12 +597,11 @@ class RecSearch(object):
         else:
             raise NotImplementedError()
 
-
     def set_queries(self, *queries, infile_type=None):
         infile_legal_types = ['fasta', 'fa', 'genbank', 'gb']
         if infile_type:
             assert infile_type.lower() in infile_legal_types, ("infile_type must be one of the following"
-                                                              "filetypes: {}").format(", ".join(infile_legal_types))
+                                                               "filetypes: {}").format(", ".join(infile_legal_types))
         for query in queries:
             if isinstance(query, list):
                 self.set_queries(*query, infile_type=infile_type.lower())
@@ -732,19 +720,18 @@ class RecSearch(object):
     def _blat_server_check_(self, target, direction, search_type, database, database_port, host, database_path, indent):
         database_port = {target: database_port} if isinstance(database_port, int) else database_port
         assert isinstance(database_port, dict), ("{0} search ports for search of type {1} must be a dictionary "
-                                                "of species-port key pairs. Provided object was of "
-                                                "type {2} with structure {3}").format(direction.capitalize(),
-                                                                                      search_type,
-                                                                                      type(database_port),
-                                                                                      str(database_port))
+                                                 "of species-port key pairs. Provided object was of "
+                                                 "type {2} with structure {3}").format(direction.capitalize(),
+                                                                                       search_type,
+                                                                                       type(database_port),
+                                                                                       str(database_port))
         database = {target: database} if isinstance(database, str) else database
-        assert isinstance(database, dict), ("{0} search databases for search of type {1} must be a dictionary " \
-                                            "of species-database key pairs. Provided object was of " \
+        assert isinstance(database, dict), ("{0} search databases for search of type {1} must be a dictionary "
+                                            "of species-database key pairs. Provided object was of "
                                             "type {2} with structure {3}").format(direction.capitalize(),
                                                                                   search_type,
                                                                                   type(database),
                                                                                   str(database))
-        server_activated = {}
 
         if database_port[target] == 'auto':
             server_online = False
@@ -773,7 +760,12 @@ class RecSearch(object):
                 except Exception:
                     raise
             else:
-                return False        # First, read the bed file and assemble the training set
+                return False
+
+    def optimize_parameters(self, training_bed, step_size):
+        warnings.warn("Only does the first step of optimization, does not optimize reverse parameters!",
+                      RecBlastWarning)
+        # First, read the bed file and assemble the training set
         training_set = {}
         bedfile = Path(training_bed)
         assert bedfile.exists(), "Given bedfile path does not exist!"
@@ -790,9 +782,9 @@ class RecSearch(object):
             assert gene in gene_records, ("Training set contains the gene {}, but there is "
                                           "no associated query with the same name!").format(gene)
             training_set[gene] = sorted(sorted(sorted(training_set[gene],
-                                                       key=itemgetter(2)),
-                                                key=itemgetter(1)),
-                                         key=itemgetter(0))
+                                                      key=itemgetter(2)),
+                                               key=itemgetter(1)),
+                                        key=itemgetter(0))
         # Deep copy the current recblast for training
         test_recblast = deepcopy(self)
         test_recblast.verbose = 0
@@ -804,7 +796,7 @@ class RecSearch(object):
         # Finally, we'll then feed in the results from the first search to the program to do the reverse,
         # where we'll optimize the reverse parameters.
         param_tests = list(product(*[[round(i * step_size, 3) for i in range(0, int(1 / step_size) + 1)]
-                       for low, high in zip((0,0,0,0), (1,1,1,1))]))
+                                     for low, high in zip((0, 0, 0, 0), (1, 1, 1, 1))]))
         total_tests = len(param_tests)
         fw_test_results = {}
 
@@ -817,18 +809,18 @@ class RecSearch(object):
             r_name = "test" + "_fwd_" + "_".join(("{0}-{1}".format(k, v) for k, v in
                                                   test_recblast.forward_search_criteria.items()))
             fw_test_results[i] = [rec[2]['forward_ids']['ids'] for rec in
-                                       test_recblast(r_name, output_type=None, stop="forward_id_ranker")]
+                                  test_recblast(r_name, output_type=None, stop="forward_id_ranker")]
             print("Done!")
         score_list = []
         for i, fwout in fw_test_results.items():
 
-            score = {g:None for g in training_set}
-            fwout = [sorted(sorted(sorted(a, key=lambda i:i[1][1]),key=lambda i:i[1][0]), key=itemgetter(0))
+            score = {g: None for g in training_set}
+            fwout = [sorted(sorted(sorted(a, key=lambda i: i[1][1]), key=lambda i: i[1][0]), key=itemgetter(0))
                      if len(a) > 1 else a for a in fwout]
 
-            fw_results = {x[0][2]:[(y[0], y[1][0], y[1][1]) for y in x] for x in fwout if len(x) > 0}
+            fw_results = {x[0][2]: [(y[0], y[1][0], y[1][1]) for y in x] for x in fwout if len(x) > 0}
             for gene in training_set:
-                if not gene in fw_results:
+                if gene not in fw_results:
                     fw_results[gene] = []
                 max_score = len(set(training_set[gene]))
                 hits = len(set(training_set[gene]) & set(fw_results[gene]))
@@ -841,22 +833,18 @@ class RecSearch(object):
         # This ensures that the highest score maximizes the positive hits, followed by minimizing the false negatives,
         # and finally minimizing the false positives.
         highest_score = sorted(sorted(sorted(score_list,
-                                         key=itemgetter(2)),
-                                  key=itemgetter(1)),
-                           key=itemgetter(0), reverse=True)[0]
+                                             key=itemgetter(2)),
+                                      key=itemgetter(1)),
+                               key=itemgetter(0), reverse=True)[0]
         best_params_ind = [i for i, j in enumerate(score_list) if j[0:3] == highest_score[0:3]]
         best_params = [param_tests[i] for i in best_params_ind]
 
-        if reverse_training_bed:
-            raise NotImplementedError()
-        else:
-            return [sorted(set(i)) for i in zip(*best_params)]
-
+        return [sorted(set(i)) for i in zip(*best_params)]
 
     def __call__(self, run_name, reciprocal_method="best-hit", output_location="./", output_type="bed-min",
                  start=None, stop=None):
         assert len(self.records) > 0, ("No query records have been set! "
-                                      "Please use self.set_queries() to set query records.")
+                                       "Please use self.set_queries() to set query records.")
         if start:
             assert isinstance(start, tuple) and len(start) == 3, ("If not set to 'None', parameter 'start' must be a "
                                                                   "tuple of length 2, with the first item indicating "
@@ -932,11 +920,11 @@ class RecSearch(object):
                 for species in self.target_species}
         if self.reverse_search_settings['database'] == "auto":
             self.reverse_search_settings['database'] = {self.query_species:
-                                                        get_searchdb(search_type=self.reverse_search_type,
-                                                                     species=self.query_species,
-                                                                     db_loc=self.reverse_search_settings['database_'
-                                                                                                         'path'],
-                                                                     verbose=self.verbose, indent=1).name}
+                                                            get_searchdb(search_type=self.reverse_search_type,
+                                                                         species=self.query_species,
+                                                                         db_loc=self.reverse_search_settings['database_'
+                                                                                                             'path'],
+                                                                         verbose=self.verbose, indent=1).name}
         # If sequence_source= twobit and database=auto, set database equal to forward search db
         if self.sequence_source in ["twobit", "2bit"]:
             if self.sequence_source_settings['database'] == 'auto':
@@ -1030,7 +1018,7 @@ class RecSearch(object):
                                 with outfile.open("a") as of:
                                     of.write(recblast_out[-1][2])
                             elif output_type:
-                                recblast_out[-1].write(filetype=output_type, file_loc=outfolder, verbose = self.verbose)
+                                recblast_out[-1].write(filetype=output_type, file_loc=outfolder, verbose=self.verbose)
                     if self.memory_saver_level:
                         recblast_out[-1] = 1
 
@@ -1054,11 +1042,15 @@ class RecSearch(object):
     def __repr__(self):
         return ('RecSearch(target_species={0}, query_species={1}, '
                 'forward_search_type={2}, reverse_search_type={3}, '
-                'sequence_source={4}, n_records={5}, verbose={6})'.format(self.target_species, self.query_species,
-                                                                         self.forward_search_type, 
-                                                                         self.reverse_search_type, self.sequence_source,
-                                                                         len(self.records), self.verbose)
+                'sequence_source={4}, n_records={5}, verbose={6})'.format(self.target_species,
+                                                                          self.query_species,
+                                                                          self.forward_search_type,
+                                                                          self.reverse_search_type,
+                                                                          self.sequence_source,
+                                                                          len(self.records),
+                                                                          self.verbose)
                 )
+
     def __str__(self):
         s = "RecSearch Version {version}\n" \
             "Query Species:\n" \
@@ -1103,4 +1095,3 @@ class RecSearch(object):
                       )
                       )
         return s
-        
