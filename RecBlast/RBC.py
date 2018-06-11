@@ -15,6 +15,7 @@ from Bio.Blast.Record import Blast as BioBlastRecord
 from RecBlast import print, __version__
 from RecBlast.WarningsExceptions import *
 
+
 class RecBlastRecord(dict):
     def __init__(self, proc_id=None, version=None, run_time=None, query_record=None, query_species=None,
                  target_species=None, forward_search=None, forward_ids=None, recblast_unanno=None,
@@ -44,8 +45,10 @@ class RecBlastRecord(dict):
                                                                    search_nohits=Path()
                                                                    )
 
+
 class RecBlastContainer(dict):
     """RecBlastContainer class containing all intermediary and final RecBlast outputs."""
+
     def __init__(self, target_species, query_record, **kwargs):
         super(dict, self).__init__()
         if isinstance(query_record, SeqIO.SeqRecord):
@@ -220,7 +223,7 @@ class RecBlastContainer(dict):
                                                                        self[species][query]['recblast_results']))
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
-    def result_reduce(self, func, *args, species=None, query=None, ** kwargs):
+    def result_reduce(self, func, *args, species=None, query=None, **kwargs):
         replace_internal = kwargs.pop('replace_internal', False)
         if '__dict__' in self.keys():
             del self['__dict__']
@@ -267,7 +270,7 @@ class RecBlastContainer(dict):
                                                                           self[species][query]['recblast_results']))
                 return RecBlastContainer(target_species=species, query_record=query_record)
 
-    def write(self, file_loc=None, filetype='fasta', verbose = 1, **kwargs):
+    def write(self, file_loc=None, filetype='fasta', verbose=1, **kwargs):
         if filetype is None:
             return 0
         if file_loc is None:
@@ -304,19 +307,19 @@ class RecBlastContainer(dict):
                     nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom='complete',
                                              verbose=verbose)
                 else:
-                   nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom=custom,
-                                                     verbose=verbose)
+                    nwrite = self._write_bed(file_loc=file_loc, filename=filename, col=col, custom=custom,
+                                             verbose=verbose)
             elif filetype.lower() in 'gff3':
-                nwrite = self._write_gff3(file_loc=file_loc, verbose = verbose, **kwargs)
+                nwrite = self._write_gff3(file_loc=file_loc, verbose=verbose, **kwargs)
             else:
-                nwrite = self._write_files(file_loc=file_loc, filetype=filetype, verbose = verbose, **kwargs)
+                nwrite = self._write_files(file_loc=file_loc, filetype=filetype, verbose=verbose, **kwargs)
         return nwrite
 
     def _write_bed(self, file_loc, filename, custom, col, verbose):
         nwrite = 0
         for species in self.keys():
             bed = []
-            recblast_output = file_loc.joinpath(species.replace(' ', '_')+'_'+str(filename))
+            recblast_output = file_loc.joinpath(species.replace(' ', '_') + '_' + str(filename))
             try:
                 recblast_output.parent.mkdir(parents=True)
             except FileExistsError:
@@ -339,7 +342,7 @@ class RecBlastContainer(dict):
                     try:
                         loc = feat.location
                         try:
-                            start = str(loc.start) if loc.start is not None else '0' 
+                            start = str(loc.start) if loc.start is not None else '0'
                         except AttributeError:
                             start = '0'
                         try:
@@ -393,7 +396,7 @@ class RecBlastContainer(dict):
                         new_cols = []
                         if custom == 'complete':
                             for val in feat.qualifiers.keys():
-                                if val in ['score','thickStart','thickEnd','itemRGB', 'blockCount', 'blockSizes',
+                                if val in ['score', 'thickStart', 'thickEnd', 'itemRGB', 'blockCount', 'blockSizes',
                                            'blockStarts']:
                                     continue
                                 else:
@@ -555,22 +558,22 @@ class RecBlastContainer(dict):
         for species, species_dict in self.items():
             strobj += species + ':\n'
             for query, query_dict in species_dict.items():
-                strobj += 1*i + query + ":\n"
+                strobj += 1 * i + query + ":\n"
                 for key, value in query_dict.items():
-                    strobj += 2*i + key + ":\n"
+                    strobj += 2 * i + key + ":\n"
                     if isinstance(value, dict):
                         for subkey, subvalue in value.items():
                             strobj += 3 * i + subkey + ":\n"
                             if isinstance(subvalue, dict):
                                 for subsubkey, subsubvalue in value.items():
                                     strobj += 4 * i + subsubkey + ":\n"
-                                    val = str(subsubvalue).replace('\n', '\n' + 5*i)
+                                    val = str(subsubvalue).replace('\n', '\n' + 5 * i)
                                     strobj += 5 * i + val + "\n"
                             else:
-                                val = str(subvalue).replace('\n', '\n' + 4*i)
+                                val = str(subvalue).replace('\n', '\n' + 4 * i)
                                 strobj += 4 * i + val + "\n"
                     else:
-                        val = str(value).replace('\n', '\n' + 3*i)
+                        val = str(value).replace('\n', '\n' + 3 * i)
                         strobj += 3 * i + val + "\n"
         return strobj
 
@@ -625,10 +628,11 @@ def RBC_load(rbc_file, sha256_checksum, compressed=True):
                     break
                 except UnpicklingError:
                     yield f.read()
+
     return sum((RecBlastContainer(i[0], **i[2]) for i in _load(rbc_file,
                                                                compressed,
                                                                sha256_checksum) if all([isinstance(i[0], str),
-                                                                                       isinstance(i[2], dict)]
+                                                                                        isinstance(i[2], dict)]
                                                                                        )))
 
 
@@ -636,7 +640,7 @@ def RBC_dump(rbc_object, filename='RBC', compressed=True):
     sha256 = hashlib.sha256()
     fmethod = bz2.BZ2File if compressed else open
     suffix = '.pbz2' if compressed else 'p'
-    with fmethod(filename+suffix, 'wb', buffering=0) as f:
+    with fmethod(filename + suffix, 'wb', buffering=0) as f:
         for c in rbc_object:
             s = pickle.dumps(c, protocol=pickle.HIGHEST_PROTOCOL)
             f.write(s)
