@@ -57,22 +57,20 @@ def massively_translate_fasta(SeqIter):
     return all_genes
 
 
-def translate_annotation(annotation, orig='refseq', to='symbol', species='human'):
-    """
-    Converts a name from one type to another using mygene.
-    :param annotation str:
+def translate_ids(id_list, orig='refseq', to='symbol', species='human'):
+    """Converts a name from one type to another using mygene.
+
+    :param id_list list:
     :param orig str:
     :param to str:
     :param species str:
-    :return str:
+    :return list:
     """
     mg = mygene.MyGeneInfo()
-    out = mg.querymany(annotation, scopes=orig, fields=to, species=species)
-    try:
-        trans = out[0]
-        return trans[to]
-    except KeyError:
-        raise Exception('No symbol found for {}'.format(annotation))
+    out = mg.querymany(id_list, scopes=orig, fields=to, species=species)
+    trans_dict = {rec['query']: rec[to] for rec in out if to in rec}
+    translated_id_list = [trans_dict[rec] if rec in trans_dict else rec for rec in id_list]
+    return translated_id_list
 
 
 def nr_by_longest(handle, filetype='fasta', write=True):
