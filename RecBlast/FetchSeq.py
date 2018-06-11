@@ -649,6 +649,8 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
         SeqIO.write(output_list, output_name, output_type)
         return
     else:
+        if missing_items_list == [None]:
+            missing_items_list = None
         return output_list, missing_items_list
 
 
