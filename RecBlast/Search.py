@@ -7,7 +7,7 @@ from pathlib import Path
 from operator import itemgetter
 from Bio import SearchIO, SeqIO
 from Bio.Blast import NCBIXML, NCBIWWW
-from RecBlast import print, merge_ranges, flatten
+from RecBlast import print, merge_ranges
 from RecBlast.WarningsExceptions import *
 
 
@@ -40,9 +40,9 @@ class Search(object):
             if verbose > 1:
                 print(self.search_type, 'was selected.', indent=indent)
             port = self.blat_prep(database_port=database_port, species=species, verbose=verbose, indent=indent)
-            return self.blat_run(seq_record=seq_record, species=species, host=local, port=port,
+            return self.blat_run(seq_record=seq_record, local=local, port=port,
                                  filetype=filetype, blat_type=self.search_type, perc_ident=perc_ident,
-                                 verbose=verbose, indent=indent, blatdb=database_path, outtype='pslx', **kwargs)
+                                 verbose=verbose, indent=indent, blatdb=database_path, outtype='pslx')
         else:
             raise SearchEngineNotImplementedError('Invalid selection for search type!')
 
@@ -56,6 +56,7 @@ class Search(object):
                            a string with the file loaction.
         :param str species: The species whose sequence database will be queried.
         :param Union[dict, str, Path] database: The name of the database to be used in the search.
+        :param str blast_type: Type of BLAST search being performed
         :param str filetype: Filetype of seq_record (if seq_record is a SeqRecord object, leave as default.
                              [default: 'fasta']
         :param bool local_blast: Should the search be conducted locally or on remote servers? (BLAT searches are always
@@ -97,7 +98,7 @@ class Search(object):
             if verbose:
                 print('Running BLAST locally...', indent=indent)
                 print('Options:', indent=indent)
-                print(args_expanded, indent=indent+1)
+                print(args_expanded, indent=indent + 1)
             if blast_type in ["blastn", "blastp", "blastx", "tblastx", "tblastn"]:
                 blast_cline = [blast_type] + args_expanded
                 try:
@@ -124,7 +125,7 @@ class Search(object):
             if verbose:
                 print('Submitting Remote BLAST! Options passed:', indent=indent)
                 for k, v in args.items():
-                    print('{0}\t=\t{1}'.format(k, v), indent=indent+1)
+                    print('{0}\t=\t{1}'.format(k, v), indent=indent + 1)
             try:
                 blast_result = NCBIWWW.qblast(**args)
                 blast_err = None
@@ -151,11 +152,12 @@ class Search(object):
 
     @staticmethod
     def blat_run(seq_record, port, local="localhost", filetype="fasta", blat_type='blat', perc_ident=None,
-                 verbose=True, indent=0, blatdb='/usr/db/blastdb/', outtype='pslx', **kwargs):
+                 verbose=True, indent=0, blatdb='/usr/db/blastdb/', outtype='pslx'):
         """A wrapper function for BLAT searches.
         :param seq_record: The record containing the query sequence for the search. Can be either a SeqIO.SeqRecord or
                            a string with the file loaction.
-        :param Union[dict, int] database: The name of the database to be used in the search.
+        :param int port: Port of the gfServer to be queried
+        :param str local: Host address.
         :param str filetype: Filetype of seq_record (if seq_record is a SeqRecord object, leave as default.
                              [default: 'fasta']
         :param str blat_type: Type of search to conduct. Can be a BLAST type (blastn, blastp, blastx, tblastn, tblastx) 
@@ -165,7 +167,6 @@ class Search(object):
         :param int indent: Indent level for pretty print. [Default: 0]
         :param str blatdb: Path of databases for either BLAST or BLAT. [Default: '/usr/db/blastdb'
         :param str outtype: Output type. (see options for BLAST and BLAT) [Default: pslx]
-        :param kwargs: Additional keyword arguments to pass on to BLAST/BLAT.
         :return: blat_record, blat_err
         """
         if isinstance(seq_record, SeqIO.SeqRecord):
@@ -189,7 +190,7 @@ class Search(object):
         try:
             if verbose > 1:
                 print('BLAT command:', indent=indent)
-                print(' '.join(args_expanded), indent=indent+1)
+                print(' '.join(args_expanded), indent=indent + 1)
 
             blat = subprocess.Popen(args_expanded, stdout=subprocess.PIPE,
                                     universal_newlines=True, cwd=blatdb,
@@ -262,6 +263,7 @@ class Search(object):
                               'either a dictionary of species-port pairs or an '
                               'integer!'.format(str(type(database_port))))
         return blat_port
+
     @staticmethod
     def blast_prep(search_type, database, species, verbose, indent, db_loc):
         if database == 'auto' or database == 'auto-transcript':
@@ -364,7 +366,7 @@ def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex=None, r
             if bool(p[tmp_type].findall(id_rec)):
                 if verbose > 1:
                     print('Brute Force was set, tested strings for all pre-registered IDs.', indent=indent)
-                    print('ID was selected as type {0}!'.format(tmp_type), indent=indent+1)
+                    print('ID was selected as type {0}!'.format(tmp_type), indent=indent + 1)
                 if regex_only:
                     return p[tmp_type]
                 else:
@@ -375,7 +377,7 @@ def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex=None, r
             item_parts = p[id_type].findall(id_rec)[0]
             if verbose > 1:
                 print('Successfully found {0}, compiling list!'.format(id_type), indent=indent)
-                print('Item:\t', '\t'.join(item_parts), indent=indent+1)
+                print('Item:\t', '\t'.join(item_parts), indent=indent + 1)
         except IndexError:
             raise IDError('Could not identify patterns in {0} with id_type={1}, '
                           'is the id_search sequence correct?'.format(id_rec, id_type))
@@ -389,7 +391,7 @@ def id_search(id_rec, id_type='brute', verbose=2, indent=0, custom_regex=None, r
                     sr_tuple = p['seq_range'].findall(item_parts[2])[0]
                     if verbose > 1:
                         print('Found sequence delimiters in IDs!', indent=indent)
-                        print(sr_tuple, indent=indent+1)
+                        print(sr_tuple, indent=indent + 1)
                 except IndexError:
                     raise IDError('A positive match for a sequence range was found '
                                   '({0}), yet no hits were identified! Confirm that '
@@ -442,7 +444,7 @@ def percent_identity_searchio(hit, is_protein=True):
                             round(3 * log(1 + size_dif)))) / total
     else:
         raise Exception('Somehow your total in the percent_identity function was 0, so you broke the script!')
-    perc_ident = 100 - (millibad*0.1)
+    perc_ident = 100 - (millibad * 0.1)
     return perc_ident
 
 
@@ -483,28 +485,28 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
     :return str:  Path to the identified search database.
     """
     if verbose:
-        print('Blast DB set to auto, choosing blast_db...', indent=indent) # Todo: remove BLAST references
+        print('Search DB set to auto, choosing search_db...', indent=indent)
     species = species.replace(' ', '_')
     if verbose > 1:
-        print('Blast DB location set to: ', db_loc, indent=indent)
+        print('Search DB location set to: ', db_loc, indent=indent)
     db_type_dict = {
-                       'blastx':"protein",
-                       'blastp':"protein",
-                       'blastn':"genome",
-                       'tblastn':"genome",
-                       'tblastx':"genome",
-                       'blastn-transcript':"transcript",
-                       'tblastn-transcript':"transcript",
-                       'tblastx-transcript':"transcript",
-                       'blat':"blat",
-                       'tblat': "blat",
-                       'blat-transcript':'blat-transcript',
-                       'tblat-transcript':'tblat-transcript'
+        'blastx': "protein",
+        'blastp': "protein",
+        'blastn': "genome",
+        'tblastn': "genome",
+        'tblastx': "genome",
+        'blastn-transcript': "transcript",
+        'tblastn-transcript': "transcript",
+        'tblastx-transcript': "transcript",
+        'blat': "blat",
+        'tblat': "blat",
+        'blat-transcript': 'blat-transcript',
+        'tblat-transcript': 'tblat-transcript'
     }
     try:
         db_type = db_type_dict[search_type]
     except KeyError:
-        print('Unable to determing blast db type!', indent=indent)
+        print('Unable to determine search db type!', indent=indent)
         raise SearchError('Improper search type given ({})!'.format(search_type))
     if verbose > 1:
         print('DB type: ', db_type, indent=indent)
@@ -513,7 +515,8 @@ def get_searchdb(search_type, species, db_loc, verbose=1, indent=0):
         db_path = Path(db_loc)
     if db_path.exists() and db_path.is_dir():
         if db_type == 'blat':
-            glob_path = [i for i in db_path.glob('{0}*.2bit'.format(species.replace(' ', '_')))] # Todo: generalize extension
+            glob_path = [i for i in
+                         db_path.glob('{0}*.2bit'.format(species.replace(' ', '_')))]  # Todo: generalize extension
         elif db_type in ['blat-transcript', 'tblat-transcript']:
             glob_path = [i for i in db_path.glob('{0}*transcript.2bit'.format(species.replace(' ', '_')))]
         else:
@@ -657,7 +660,7 @@ def blat_server(twobit, order='start', host='localhost', port=20000, type='blat'
             gfserver_cmd += ['-trans', '-mask']
         if gfserver_suppl_args:
             gfserver_cmd += gfserver_suppl_args
-        gfserver_cmd_str = ' '. join(gfserver_cmd+[twobit])
+        gfserver_cmd_str = ' '.join(gfserver_cmd + [twobit])
         if verbose > 2:
             print(gfserver_cmd_str, indent=indent)
         subprocess.Popen(gfserver_cmd_str, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -683,8 +686,8 @@ def blat_server(twobit, order='start', host='localhost', port=20000, type='blat'
             raise TimeoutError('Timed out!')
 
 
-def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_cumu_score=True,
-              seq_method='whole', indent=0, verbose=1, same_strand=True, return_only=None):
+def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None,
+              indent=0, verbose=1, same_strand=True, return_only=None):
     """Filters results based on score, expectation value, length, percent identity, and span; returns a sorted list.
 
     :param query_record record: Either a SearchIO.QueryResult or a Bio.Blast.Record.
@@ -692,12 +695,10 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
     :param float expect: Maximum e-value for a hit (BLAST-only).
     :param float perc_query_span: Minimum percent of the longest hit by query coverage for a hit.
     :param int perc_ident: Minimum percent identity of a hit.
-    :param bool hsp_cumu_score: Use cumulative HSP scores rather than individual scores. (LEAVE AS DEFAULT)
-    :param str seq_method: How should id_ranker compile the sequence ranges? [Default: 'whole']
     :param int indent: Indent level for pretty print. [Default: 0]
     :param int verbose: Level of verbose output? [Default: 1]
-    :param str method: Return all ranked hits ('all'), or only the top hit ('best-hit')? [Default: 'all']
     :param bool same_strand: Should the function filter hits with HSPs on different strands? [Default:True]
+    :param return_only: Should all or only one id be returned?
     :return list: Returns a list of tuples containing the final hit data in BED6 format.  
     """
     id_list = []
@@ -705,10 +706,10 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
         print('Beginning ID_Ranker...', indent=indent)
     if record.program == 'blat':
         if verbose > 2:
-            print('Results obtained from BLAT run.', indent=indent+1)
+            print('Results obtained from BLAT run.', indent=indent + 1)
     elif 'blast' in record.program:
         if verbose > 2:
-            print('Results obtained from BLAST run.', indent=indent+1)
+            print('Results obtained from BLAST run.', indent=indent + 1)
     else:
         raise NotImplementedError('Sorry, your program {} is not yet '
                                   'implemented for RecBlast!'.format(record.program))
@@ -725,7 +726,7 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
 
     def hsp_same_strand(hsp):
         if same_strand:
-            return all([i == hsp.hit_strand_all[0] for i in hsp.hit_strand_all]) == True
+            return all([i == hsp.hit_strand_all[0] for i in hsp.hit_strand_all])
         else:
             return True
 
@@ -754,10 +755,10 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
             print("------------------------------------------------------")
             for hsp in hit:
                 print('|\t{id}\t|\t{hf}\t|\t{score}\t|\t{length}\t|\t{ident}\t|'.format(id=hsp.hit_id,
-                                                                                     hf=len(hsp),
-                                                                                     score=hsp.score,
-                                                                                     length=hsp.hit_span,
-                                                                                     ident=hsp.ident_pct))
+                                                                                        hf=len(hsp),
+                                                                                        score=hsp.score,
+                                                                                        length=hsp.hit_span,
+                                                                                        ident=hsp.ident_pct))
 
     # Execute filters:
     # query_span
@@ -782,7 +783,7 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
         print('Filtering out all HSPs with percent identity below {}...'.format(perc_ident), indent=indent)
     record = record.hsp_filter(hsp_perc_ident) if perc_ident else record
     if not record:
-        text = 'No hits in Query Results have a percent identity above {}%!'.format(round(perc_ident*100, 2))
+        text = 'No hits in Query Results have a percent identity above {}%!'.format(round(perc_ident * 100, 2))
         raise NoHitsError(text)
     if verbose > 1:
         print('Number of HSPs for {}:\t'.format(record.id), sum([len(i.hsps) for i in record]), indent=indent)
@@ -829,7 +830,7 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
             id_list.append([hsp.hit_id, hsp.hit_range, hsp.query_id, hsp.score, strand, hsp.hit_range[0],
                             hsp.hit_range[1], "255,0,0", len(hsp.hit_start_all),
                             ",".join([str(i) for i in block_spans]),
-                            ",".join([str(i-hsp.hit_range[0]) for i in block_starts]), hsp.query_range])
+                            ",".join([str(i - hsp.hit_range[0]) for i in block_starts]), hsp.query_range])
 
             if return_only and n == return_only:
                 print('Returning only the top {} hits, ending here!'.format(return_only),
