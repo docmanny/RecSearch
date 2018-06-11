@@ -185,7 +185,8 @@ def biosql_seq_lookup_cascade(dtbase, sub_db_name, id_type, identifier, indent=0
 
 
 class GetSeqMP(multiprocessing.Process):
-    def __init__(self, task_queue, result_queue, database, host, driver, user, passwd, sub_db_name, verbose, server=None):
+    def __init__(self, task_queue, result_queue, database, host, driver,
+                 user, passwd, sub_db_name, verbose, server=None):
         multiprocessing.Process.__init__(self)
         self.task_queue = task_queue
         self.result_queue = result_queue
@@ -565,7 +566,7 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
                                     "chr, (start,end), id, score, strand, thickStart, thickEnd, rgb, blockcount,"
                                     " blockspans, blockstarts, query_span"
                                     "!").format(" ".join((" ".join(item) if not isinstance(item, str) else item
-                                                        for item in id_item)),
+                                                          for item in id_item)),
                                                 len(id_item))
     if verbose > 1:
         print('Readied ids!', indent=indent)
@@ -601,7 +602,7 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
         print('Creating FecSeq Processes...', indent=indent)
     fs_instances = [FetchSeqMP(id_queue=id_list, seq_out_queue=results,
                                delim=delim, id_type=id_type, server=server, species=species, source=source,
-                               database=database, database_path= database_path,
+                               database=database, database_path=database_path,
                                host=host, driver=driver, version=version, user=user, passwd=passwd, email=email,
                                output_type=output_type, batch_size=batch_size, verbose=verbose,
                                n_subthreads=n_subthreads, add_length=add_length, indent=indent + 1)
@@ -616,7 +617,7 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
     id_order = []
     for i, id_rec in enumerate(ids):
         try:
-            id_order.append("{0}:{1}-{2}".format(id_rec[0],id_rec[1][0],id_rec[1][1]))
+            id_order.append("{0}:{1}-{2}".format(id_rec[0], id_rec[1][0], id_rec[1][1]))
         except IndexError:
             id_order.append("{0}".format(id_rec[0]))
         try:
@@ -655,7 +656,6 @@ def fetchseq(ids, species, write=False, output_name='', delim='\t', id_type='bru
 
 
 def seq_from_exon(query_record, forward_search_criteria):
-    # TODO: filter sequences as in Search.id_ranker()
     from functools import reduce
     query_seq = []
     for hsp in query_record:
@@ -669,3 +669,5 @@ def seq_from_exon(query_record, forward_search_criteria):
                         reverse=all((hsp_fragment.features[0].location.strand == -1 for hsp_fragment in hsp)))
                  for hsp in query_seq]
     query_seq_joint = [reduce(lambda x, y: x + y, hsp) for hsp in query_seq]
+    raise NotImplementedError("Still working on this")
+    # Todo: Finish seq_from_exon
