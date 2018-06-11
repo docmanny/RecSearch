@@ -805,7 +805,6 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
     n = 1
     for hit in record:
         for hsp in hit:
-
             # some quick strand math:
             if hsp._has_hit_strand:
                 strands = set(hsp.hit_strand_all)
@@ -816,9 +815,10 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
             else:
                 strand = "."
             if verbose > 2:
-                print("Adding hit {chr}:{s}-{e} to id list".format(chr=hsp.hit_id,
-                                                                   s=str(hsp.hit_range[0]),
-                                                                   e=str(hsp.hit_range[1])),
+                print("Adding hit {chr}:{s}-{e}({st}) to id list".format(chr=hsp.hit_id,
+                                                                         s=str(hsp.hit_range[0]),
+                                                                         e=str(hsp.hit_range[1]),
+                                                                         st=strand),
                       indent=indent)
             # A little witchcraft before we do though
             # turns out hsp.hit_start_all won't necessarily start with the starting point of the hit...
@@ -826,10 +826,10 @@ def id_ranker(record, perc_score, perc_query_span, perc_ident, expect=None, hsp_
             block_starts, block_spans = zip(*sorted(zip(hsp.hit_start_all, hsp.hit_span_all), key=itemgetter(0)))
 
             # chr (start,end) id score strand thickStart thickEnd rgb blockcount blockspans blockstarts query_span
-            id_list.append((hsp.hit_id, hsp.hit_range, hsp.query_id, hsp.score, strand, hsp.hit_range[0],
+            id_list.append([hsp.hit_id, hsp.hit_range, hsp.query_id, hsp.score, strand, hsp.hit_range[0],
                             hsp.hit_range[1], "255,0,0", len(hsp.hit_start_all),
                             ",".join([str(i) for i in block_spans]),
-                            ",".join([str(i-hsp.hit_range[0]) for i in block_starts]), hsp.query_range))
+                            ",".join([str(i-hsp.hit_range[0]) for i in block_starts]), hsp.query_range])
 
             if return_only and n == return_only:
                 print('Returning only the top {} hits, ending here!'.format(return_only),
