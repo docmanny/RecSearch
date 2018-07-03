@@ -2,7 +2,7 @@
 # Quick script to install some testing dependencies for travisci
 
 cd $HOME
-mkdir bin && export PATH="$HOME/bin/:$PATH"
+export PATH="$HOME/bin/:$PATH"
 mkdir db && cd db
 mkdir blastdb && export BLASTDB="$HOME/db/blastdb"
 mkdir blatdb && export BLATDB="$HOME/db/blatdb"
@@ -14,6 +14,10 @@ cd blatdb
 touch hg38.2bit, pteVam1.2bit, myoLuc2.2bit
 rsync -avzn rsync://hgdownload.soe.ucsc.edu/genome/admin/exe/linux.x86_64/\
 {faToTwoBit,blat/gfClient,blat/gfServer} $HOME/bin/
+
+which gfServer
+which gfClient
+which faToTwoBit
 
 ## BLASTDB Collection
 cd ../blastdb

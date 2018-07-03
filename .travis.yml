@@ -13,10 +13,10 @@ before_install: bash travis_install.sh
 # command to install dependencies
 install:
     - pip install -r requirements.txt
-    - pip install -e git+https://github.com/docmanny/RecBlast#egg=RecBlast
+    - pip install .
 # command to run tests
 script: 
-    - pytest test.py
+    - pytest RecBlast/test.py
 # call codecov from project root
 after_success:
     - if [[ $TRAVIS_PYTHON_VERSION != nightly ]]; then codecov; fi
