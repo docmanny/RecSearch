@@ -556,7 +556,11 @@ class RecSearch(object):
         # Tests:
         assert isinstance(self.target_species, list), ("Target species must either be a list of target species names, "
                                                        "or a single string indicating the target species name")
-        assert all((isinstance(species, str) for species in self.target_species)), "All target species must be strings!"
+        assert all((isinstance(species, str) for species in self.target_species)), ("All target species "
+                                                                                    "must be strings! target_species"
+                                                                                    "is instead of type "
+                                                                                    "{}".format(type(self.target_species
+                                                                                                     )))
 
         assert isinstance(verbose, int), ('Verbose was of type {}; must be either be an integer greater '
                                           'than or equal to zero, or a number of v\'s equal '
