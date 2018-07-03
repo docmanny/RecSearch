@@ -544,7 +544,9 @@ class RecSearch(object):
         self.records = []
         self.search_parameters = {"Forward": {}, "Reverse": {}}
         # Other parameters
-        self.target_species = target_species if isinstance(target_species, list) else [target_species]
+        self.target_species = target_species if isinstance(target_species, (list, tuple)) else [target_species]
+        if isinstance(self.target_species, tuple):
+            self.target_species = list(self.target_species)
         self.query_species = query_species
         self.verbose = verbose.lower().count('v') if isinstance(verbose, str) else verbose
         self.forward_search_type = forward_search_type.lower()
