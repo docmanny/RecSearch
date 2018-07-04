@@ -1078,7 +1078,7 @@ class RecSearch(object):
             "\t Criteria:\n" \
             "\t\t{r_search_crit}\n" \
             "Sequence Database: {seq_db}\n" \
-            "\t{seq_set}" \
+            "\t{seq_set}\n" \
             "Annotation Translation Parameters:\n" \
             "\t{tap}\n" \
             "".format(version=__version__,
