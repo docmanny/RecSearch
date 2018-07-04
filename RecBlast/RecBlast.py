@@ -1060,6 +1060,9 @@ class RecSearch(object):
                 )
 
     def __str__(self):
+        t = ("{0}: {1}".format(k, v) for k, v in self.translate_annotation_params.items())
+        tap="\n\t".join(i if len(i) <= 500 else i[0:500]+"..." for i in t) if \
+            isinstance(self.translate_annotation_params, dict) else "None"
         s = "RecSearch Version {version}\n" \
             "Query Species:\n" \
             "\t{query_species}\n" \
@@ -1103,8 +1106,6 @@ class RecSearch(object):
                       seq_set="\n\t".join(
                           ("{0}: {1}".format(k, v) for k, v in self.sequence_source_settings.items())
                       ),
-                      tap="\n\t".join(
-                          ("{0}: {1}".format(k, v)[0:500] for k, v in self.translate_annotation_params.items())
-                      ) if isinstance(self.translate_annotation_params, dict) else "None"
+                      tap=tap
                       )
         return s
