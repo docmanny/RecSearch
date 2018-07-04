@@ -15,9 +15,9 @@ touch hg38.2bit, pteVam1.2bit, myoLuc2.2bit
 rsync -avzn rsync://hgdownload.soe.ucsc.edu/genome/admin/exe/linux.x86_64/\
 {faToTwoBit,blat/gfClient,blat/gfServer} $HOME/bin/
 
-which gfServer
-which gfClient
-which faToTwoBit
+echo "$(which gfServer)"
+echo "$(which gfClient)"
+echo "$(which faToTwoBit)"
 
 ## BLASTDB Collection
 cd ../blastdb
