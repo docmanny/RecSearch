@@ -1079,6 +1079,8 @@ class RecSearch(object):
             "\t\t{r_search_crit}\n" \
             "Sequence Database: {seq_db}\n" \
             "\t{seq_set}" \
+            "Annotation Translation Parameters:\n" \
+            "\t{tap}\n" \
             "".format(version=__version__,
                       query_species=self.query_species,
                       target_species="\n\t".join(self.target_species),
@@ -1100,6 +1102,9 @@ class RecSearch(object):
                       seq_db=self.sequence_source,
                       seq_set="\n\t".join(
                           ("{0}: {1}".format(k, v) for k, v in self.sequence_source_settings.items())
-                      )
+                      ),
+                      tap="\n\t".join(
+                          ("{0}: {1}".format(k, v) for k, v in self.translate_annotation_params.items())
+                      ) if isinstance(self.translate_annotation_params, dict) else "None"
                       )
         return s
