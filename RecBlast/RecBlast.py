@@ -1104,7 +1104,7 @@ class RecSearch(object):
                           ("{0}: {1}".format(k, v) for k, v in self.sequence_source_settings.items())
                       ),
                       tap="\n\t".join(
-                          ("{0}: {1}".format(k, v) for k, v in self.translate_annotation_params.items())
+                          ("{0}: {1}".format(k, v[0:500]) for k, v in self.translate_annotation_params.items())
                       ) if isinstance(self.translate_annotation_params, dict) else "None"
                       )
         return s
