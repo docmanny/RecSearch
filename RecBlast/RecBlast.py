@@ -863,8 +863,21 @@ class RecSearch(object):
         with location.open("w") as outf:
             outf.write(str(self))
 
-    def __call__(self, run_name, reciprocal_method="best-hit", output_location="./", output_type="bed-min",
+    def _makeoutputfolders(self, run_name, location):
+        rootfolder = Path(location, '{0}'.format(run_name))
+        logfolder = Path(rootfolder, "logs/")
+        outfolder = Path(rootfolder, "output/")
+        for folder in (rootfolder, logfolder, outfolder):
+            try:
+                folder.mkdir(parents=True)
+            except FileExistsError:
+                pass
+        return (rootfolder, logfolder, outfolder)
+
+    def __call__(self, run_name=None, reciprocal_method="best-hit", output_location="./", output_type="bed-min",
                  start=None, stop=None):
+        date_str = datetime.now().strftime('%y-%m-%d_%I-%M-%p')
+        run_name = run_name if run_name else date_str
         assert len(self.records) > 0, ("No query records have been set! "
                                        "Please use self.set_queries() to set query records.")
         if start:
@@ -922,18 +935,11 @@ class RecSearch(object):
             print('Done!')
         #########################################################################
         # Make output folder
-        date_str = datetime.now().strftime('%y-%m-%d_%I-%M-%p')
-        if output_type:
-            outfolder = Path(output_location, '{0}'.format(run_name if run_name else date_str))
-            try:
-                outfolder.mkdir(parents=True)
-            except FileExistsError:
-                pass
-        else:
-            outfolder = None
+
+        (rootfolder, logfolder, outfolder) = self._makeoutputfolders(run_name, output_location) if output_type else None
 
         # Dump parameters for future reference
-        self.dump_paramfile(Path(outfolder,run_name+".parameters"))
+        self.dump_paramfile(Path(logfolder,run_name+".parameters"))
         #########################################################################
         # Get Database Files if set to "auto"
         if self.forward_search_settings['database'] == "auto":
@@ -985,7 +991,7 @@ class RecSearch(object):
                                                 reverse_search_criteria=self.reverse_search_criteria,
                                                 reverse_search_settings=self.reverse_search_settings,
                                                 reciprocal_method=reciprocal_method, output_type=output_type,
-                                                outfolder=outfolder,
+                                                outfolder=logfolder,
                                                 translate_annotation_params=self.translate_annotation_params,
                                                 verbose=self.verbose,
                                                 memory_saver_level=self.memory_saver_level)
