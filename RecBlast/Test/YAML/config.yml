@@ -1,0 +1,49 @@
+author: Juan Manuel Vazquez
+run_name: test
+output_location: ./
+
+
+query_species: Homo_sapiens
+target_species:
+- Loxodonta_africana
+- Procavia_capensis
+query_file: RecBlast/Test/query/test.faprt
+forward_search:
+  type: tblat
+  parameters:
+    local: localhost
+    database_version: auto
+    database_path: /usr/db/BLAT
+    database:
+      Loxodonta_africana: loxAfr3.2bit
+    database_port:
+      Loxodonta_africana: 20008
+  criteria:
+    perc_score: 10
+    perc_ident: 10
+    perc_query_span: 10
+sequence_source:
+  database_type: twobit
+  database_path: /usr/db/BLAT
+  database:
+    Loxodonta_africana: loxAfr3.2bit
+  id_type: brute
+reverse_search:
+  type: blat
+  parameters:
+    local: localhost
+    database_version: auto
+    database_path: /usr/db/BLAT
+    database:
+      Homo_sapiens: hg38.2bit
+    database_port:
+      Homo_sapiens: '30001'
+  criteria:
+    perc_score: 10
+    perc_ident: 10
+    perc_query_span: 10
+annotation:
+  translate:
+    method: table
+    key_value_order: false
+    tsv_location:
