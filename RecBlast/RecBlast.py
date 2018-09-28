@@ -360,6 +360,7 @@ class RecBlastRun(object):
         old_indent = indent
 
         for index, fw_hit_record in enumerate(recblast_sequence):
+            fw_hit_record.features[0].qualifiers["annotations"] = ""
             indent = old_indent
             assert isinstance(fw_hit_record, SeqRecord), ('Warning! entry_record is of type {} '
                                                           'rather than SeqRecord!').format(str(type(fw_hit_record)))
@@ -399,6 +400,13 @@ class RecBlastRun(object):
                                                       outpath=output_paths['reverse_search_output'][-1],
                                                       verbose=verbose,
                                                       indent=indent + 1)
+            except NoHitsError as err:
+
+                if isinstance(err, SearchError):
+                    err = ReverseSearchError(err)
+                print("{0}: {1}".format(str(type(err)), err), indent=indent)
+                print("As nothing was found, continuing to next hit!", indent=indent)
+                continue
             except RecBlastException as err:
                 if isinstance(err, SearchError):
                     err = ReverseSearchError(err)
@@ -421,14 +429,15 @@ class RecBlastRun(object):
                                                                                 score=id_i[3], strand=id_i[4])
                     for id_i in r_id_ranked]
                 reverse_ids['pretty_ids'] = None if memory_saver_level else r_id_out_list
-            except NoHitsError:
-                print('No Reverse search hits were found for this hit!', indent=indent)
+            except NoHitsError as err:
+                if isinstance(err, SearchError):
+                    err = ReverseSearchError(err)
+                print("{0}: {1}".format(str(type(err)), err), indent=indent)
                 print('Continuing to next Sequence!', indent=indent)
                 continue
             except RecBlastException as err:
                 print("{0}: {1}".format(str(type(err)), err))
                 return rc_container_full
-            fw_hit_record.features[0].qualifiers["annotations"] = ""
             if reciprocal_method in ['best-hit', 'best hit']:
                 if verbose:
                     message = 'Best Hit Reciprocal BLAST was selected, will only use top hit for annotation!'
@@ -849,6 +858,10 @@ class RecSearch(object):
 
         return [sorted(set(i)) for i in zip(*best_params)]
 
+    def dump_paramfile(self, location):
+        with open(location, "w") as outf:
+            outf.write(str(self))
+
     def __call__(self, run_name, reciprocal_method="best-hit", output_location="./", output_type="bed-min",
                  start=None, stop=None):
         assert len(self.records) > 0, ("No query records have been set! "
@@ -917,6 +930,9 @@ class RecSearch(object):
                 pass
         else:
             outfolder = None
+
+        # Dump parameters for future reference
+        self.dump_paramfile(str(outfolder)+run_name+".parameters")
         #########################################################################
         # Get Database Files if set to "auto"
         if self.forward_search_settings['database'] == "auto":
