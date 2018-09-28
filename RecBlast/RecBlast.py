@@ -859,7 +859,8 @@ class RecSearch(object):
         return [sorted(set(i)) for i in zip(*best_params)]
 
     def dump_paramfile(self, location):
-        with open(location, "w") as outf:
+        location = Path(location) if not isinstance(location, Path) else location
+        with location.open("w") as outf:
             outf.write(str(self))
 
     def __call__(self, run_name, reciprocal_method="best-hit", output_location="./", output_type="bed-min",
@@ -932,7 +933,7 @@ class RecSearch(object):
             outfolder = None
 
         # Dump parameters for future reference
-        self.dump_paramfile(str(outfolder)+run_name+".parameters")
+        self.dump_paramfile(Path(outfolder,run_name+".parameters"))
         #########################################################################
         # Get Database Files if set to "auto"
         if self.forward_search_settings['database'] == "auto":
