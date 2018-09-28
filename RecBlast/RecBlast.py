@@ -1078,7 +1078,7 @@ class RecSearch(object):
 
     def __str__(self):
         t = ("{0}: {1}".format(k, v) for k, v in self.translate_annotation_params.items())
-        tap="\n\t".join(i if len(i) <= 500 else i[0:500]+"..." for i in t) if \
+        tap="\n\t".join(i if len(i) <= 200 else i[0:200] + " ... " + i[-10:-1] for i in t) if \
             isinstance(self.translate_annotation_params, dict) else "None"
         s = "RecSearch Version {version}\n" \
             "Query Species:\n" \
