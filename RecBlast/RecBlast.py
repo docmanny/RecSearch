@@ -892,7 +892,7 @@ class RecSearch(object):
         if self.verbose:
             print('RecBlast version: ', __version__)
             print('Using BioPython version: ', bp_version)
-            print('Beginning RecBlastMP!')
+            print('Beginning RecSearchMP!')
         if self.verbose == 1:
             print('Basic verbose mode active. Will print only essential commentary.')
         elif self.verbose == 2:
@@ -900,7 +900,7 @@ class RecSearch(object):
         elif self.verbose == 3:
             print('Debugging-level verbose mode set. You will be innunadated by text. '
                   'Brace yourself, and hold on to your console.')
-        elif self.verbose == 50:
+        elif self.verbose >= 49:
             print("V FOR VERBOSE: \n"
                   "\"Voilà! In view, a humble vaudevillian veteran cast vicariously as both victim and villain by \n"
                   "the vicissitudes of Fate. This visage, no mere veneer of vanity, is a vestige of the vox populi, \n"
@@ -979,7 +979,7 @@ class RecSearch(object):
         #########################################################################
         # RecBlast Thread init
         if self.verbose >= 1:
-            print('Creating RecBlast Threads... ')
+            print('Creating RecSearch Threads... ')
         rec_blast_instances = [RecBlastMPThread(proc_id=str(i + 1), rb_queue=rb_queue, rb_results_queue=rb_results,
                                                 query_species=self.query_species,
                                                 forward_search_type=self.forward_search_type,
@@ -1054,7 +1054,7 @@ class RecSearch(object):
                         recblast_out[-1] = 1
 
                 except Exception as err:
-                    print('WARNING! Could not write output of RecBlast #{}'.format(len(recblast_out)))
+                    print('WARNING! Could not write output of RecSearch #{}'.format(len(recblast_out)))
                     print(RecBlastWriteError(err))
                     continue
         #########################################################################
@@ -1083,7 +1083,8 @@ class RecSearch(object):
                 )
 
     def __str__(self):
-        t = ("{0}: {1}".format(k, v) for k, v in self.translate_annotation_params.items())
+        # 2021-08-15: doesn't seem like t is used, rather, only tap is
+        #t = ("{0}: {1}".format(k, v) for k, v in self.translate_annotation_params.items())
         tap="\n\t".join(i if len(i) <= 200 else i[0:200] + " ... " + i[-10:-1] for i in t) if \
             isinstance(self.translate_annotation_params, dict) else "None"
         s = "RecSearch Version {version}\n" \

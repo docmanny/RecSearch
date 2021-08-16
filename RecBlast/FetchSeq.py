@@ -521,6 +521,8 @@ class FetchSeq(object):  # The meat of the script
             print(' '.join(command), indent=indent + 1)
         twobittofa_handle = subprocess.check_output(command, universal_newlines=True, stdin=subprocess.PIPE,
                                                     stderr=subprocess.PIPE)
+        if verbose > 1: 
+            print("TwoBitToFa type: ", type(twobittofa_handle), indent=indent)
         if type(twobittofa_handle) is str:
             seq_out = twobittofa_handle
         else:
