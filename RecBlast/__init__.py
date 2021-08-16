@@ -13,7 +13,7 @@ from datetime import datetime
 import re
 from builtins import print as _print
 
-__version__ = 'v1.3dev'
+__version__ = '1.3.dev'
 
 
 def git_version():
@@ -42,7 +42,7 @@ def git_version():
 
 
 if 'dev' in __version__:
-    __version__ += '-' + git_version()
+    __version__ += '+' + git_version()
 
 
 class ProgressBar(object):
